@@ -1,0 +1,26 @@
+# ClickHouse for the Fleet panel's AI log (every proxied prompt and answer).
+# Runs in ~/containers/clickhouse on a fleet machine, deployed by clickhouse/install.sh.
+# Listens on that machine's loopback only; the panel reaches it through an ssh tunnel.
+name: clickhouse
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.36.3
+    container_name: clickhouse
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8123:8123"
+    environment:
+      CLICKHOUSE_DB: ai
+      CLICKHOUSE_USER: fleet
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "0"
+    volumes:
+      - ./data:/var/lib/clickhouse
+      - ./config.d/fleet.xml:/etc/clickhouse-server/config.d/fleet.xml:ro
+      - ./users.d/fleet.xml:/etc/clickhouse-server/users.d/fleet.xml:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }

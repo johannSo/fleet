@@ -1,0 +1,227 @@
+@import "tailwindcss";
+
+/* Tokyo Night (night) — https://github.com/folke/tokyonight.nvim */
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* surfaces, darkest → lightest */
+  --color-void: #111219;
+  --color-bg: #16161e;
+  --color-panel: #1a1b26;
+  --color-raised: #1f2335;
+  --color-hover: #24283b;
+  --color-hl: #292e42;
+  --color-sel: #283457;
+
+  /* lines */
+  --color-line: #222436;
+  --color-line-2: #2a2e44;
+  --color-line-3: #3b4261;
+
+  /* text */
+  --color-fg: #c0caf5;
+  --color-fg-2: #a9b1d6;
+  --color-fg-3: #8f98c4;
+  --color-fg-4: #8088b0;
+  --color-fg-5: #646d96;
+  --color-fg-6: #414868; /* rules and decoration only, never text */
+
+  /* accents */
+  --color-blue: #7aa2f7;
+  --color-blue-deep: #3d59a1;
+  --color-cyan: #7dcfff;
+  --color-sky: #2ac3de;
+  --color-ice: #89ddff;
+  --color-magenta: #bb9af7;
+  --color-purple: #9d7cd8;
+  --color-pink: #ff007c;
+  --color-orange: #ff9e64;
+  --color-yellow: #e0af68;
+  --color-green: #9ece6a;
+  --color-teal: #73daca;
+  --color-aqua: #1abc9c;
+  --color-red: #f7768e;
+  --color-red-deep: #db4b4b;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-spin-slow: spin 1.4s linear infinite;
+
+  @keyframes pulse-dot {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%, transparent); }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(3px); }
+    30%, 50%, 70% { transform: translateX(-6px); }
+    40%, 60% { transform: translateX(6px); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+:root {
+  color-scheme: dark;
+  --dock-h: 0px;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-sel);
+  color: var(--color-fg);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-3) transparent;
+}
+
+/* inputs show focus through their container's border instead */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-blue) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* big figures: Inter with tabular numerals reads cleaner than mono */
+.figure {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv11", "ss01";
+  letter-spacing: -0.02em;
+}
+
+/* faint dot grid behind the main canvas */
+.canvas-grid {
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--color-fg-6) 34%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  background-position: -11px -11px;
+}
+
+/* glassy card surface */
+.card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-raised) 72%, transparent), var(--color-panel));
+  border: 1px solid var(--color-line);
+  box-shadow:
+    0 1px 0 0 color-mix(in srgb, var(--color-fg) 4%, transparent) inset,
+    0 10px 30px -12px rgb(0 0 0 / 0.55);
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-raised) 0%,
+    var(--color-hl) 50%,
+    var(--color-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* touch: no long-press callouts on app chrome, and form fields at 16px so iOS doesn't zoom */
+@media (pointer: coarse) {
+  button,
+  a,
+  [role="tab"] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* hide scrollbars on horizontal chip/tab rails */
+.rail {
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* xterm */
+.xterm {
+  padding: 10px 0 0 14px;
+  height: 100%;
+}
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--color-line-3);
+  border-radius: 8px;
+}
+
+/* cmdk */
+[cmdk-item][data-selected="true"] {
+  background: var(--color-hl);
+}
+[cmdk-group-heading] {
+  padding: 10px 12px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fg-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

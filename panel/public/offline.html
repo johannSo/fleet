@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16161e">
+<title>Fleet · offline</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #16161e; color: #c0caf5; font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  main { min-height: 100%; display: grid; place-items: center; padding: 24px; box-sizing: border-box; text-align: center; }
+  .icon { width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 20px; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  p { color: #7880a8; margin: 0 auto 22px; max-width: 300px; font-size: 14px; }
+  button { appearance: none; border: 0; background: #7aa2f7; color: #11131c; font-weight: 600; font-size: 15px; padding: 12px 22px; border-radius: 10px; }
+  code { font: 13px ui-monospace, monospace; color: #7dcfff; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <img class="icon" src="/icons/icon-192.png" alt="">
+    <h1>Can't reach the panel</h1>
+    <p>Your phone needs to be on the same network as the machine running Fleet, and the panel has to be running there.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</main>
+<script>addEventListener("online", () => location.reload());</script>
+</body>
+</html>
