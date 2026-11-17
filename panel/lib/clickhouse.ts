@@ -4,6 +4,10 @@
  * keeps an ssh tunnel to it. Connection details come from $STATE_DIR/clickhouse.json,
  * which install.sh writes; without that file the AI log is simply off.
  *
+ * In Docker (compose.yml) ClickHouse is a sibling container the panel reaches directly:
+ * $CLICKHOUSE_URL (+ CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, CLICKHOUSE_DB) takes the place
+ * of clickhouse.json and the tunnel.
+ *
  * Only server.ts (and modules it imports) may use this.
  */
 import { type ChildProcess, spawn } from "node:child_process";
@@ -16,6 +20,8 @@ import { sshDest } from "./ssh";
 
 interface ChConfig {
   machine: string;
+  /** Reached directly at this base URL, no tunnel ($CLICKHOUSE_URL). */
+  url?: string;
   port: number;
   user: string;
   password: string;
@@ -25,6 +31,17 @@ interface ChConfig {
 const CONF_FILE = path.join(STATE_DIR, "clickhouse.json");
 
 export function chConfig(): ChConfig | null {
+  const url = process.env.CLICKHOUSE_URL?.replace(/\/+$/, "");
+  if (url) {
+    const e = process.env;
+    let machine = url;
+    try {
+      machine = new URL(url).host;
+    } catch {
+      /* shown as given */
+    }
+    return { machine, url, port: 0, user: e.CLICKHOUSE_USER || "fleet", password: e.CLICKHOUSE_PASSWORD || "", database: e.CLICKHOUSE_DB || "ai" };
+  }
   try {
     const c = JSON.parse(readFileSync(CONF_FILE, "utf8"));
     if (!c.machine || !c.password) return null;
@@ -52,6 +69,7 @@ function freePort(): Promise<number> {
 
 /** Base URL of ClickHouse's HTTP interface: direct when it runs here, else through the tunnel. */
 async function endpoint(c: ChConfig): Promise<string> {
+  if (c.url) return c.url;
   const node = getNode(c.machine);
   if (!node) throw new Error(`Machine "${c.machine}" from clickhouse.json isn't in the inventory`);
   if (node.local) return `http://127.0.0.1:${c.port}`;

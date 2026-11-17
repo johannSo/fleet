@@ -239,11 +239,14 @@ function toNode(r: Row, localNames: Set<string>, localHost: string, hostnameClai
   const imp = json<Imported | null>(r.imported, null);
   const manualKind = KINDS.includes(r.kind as NodeKind) ? (r.kind as NodeKind) : null;
   const hostname = hw?.hostname || imp?.hostname || r.id;
+  // In a container the panel's "own machine" is the container, not a fleet machine:
+  // FLEET_NO_LOCAL=1 reaches every machine (its host included) over ssh.
   const local =
     process.env.FLEET_LOCAL_NODE === r.id ||
+    (process.env.FLEET_NO_LOCAL !== "1" &&
     hostname.toLowerCase() === localHost ||
     (!!r.host && localNames.has(r.host.toLowerCase())) ||
-    (!hostnameClaimed && r.id.toLowerCase() === localHost);
+      (!hostnameClaimed && r.id.toLowerCase() === localHost));
   const remote = r.host ? (r.user ? `${r.user}@${r.host}` : r.host) : r.alias || null;
   const port = r.host && r.port && r.port !== 22 ? r.port : null;
   const addresses = json<AddressEntry[]>(r.addresses, []);

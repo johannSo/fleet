@@ -38,7 +38,7 @@ import { hostName, knownHostnames, lanAddresses } from "./lib/net";
 import { CA_CERT, ensureCerts } from "./lib/tls";
 import type { ClientMsg, ServerMsg, SessionInfo } from "./lib/types";
 import type { ActivityQuery, ActivitySource } from "./lib/activity-types";
-import { CpaError, listModels, listenConfig, management, serviceAction, serviceJournal, serviceState, testPrompt } from "./lib/cpa";
+import { CpaError, listModels, listenConfig, management, serviceAction, serviceJournal, serviceState, startSupervisedProxy, testPrompt } from "./lib/cpa";
 import { onUsage, recentRequests, startUsageCollector, usageReport } from "./lib/cpa-usage";
 import type { ProxyStatus, UsageRange, UsageSource } from "./lib/cpa-types";
 import { importUsage, startUsageImporter, usageImportState } from "./lib/usage-import";
@@ -952,6 +952,7 @@ app.prepare().then(() => {
     else socket.destroy();
   };
 
+  startSupervisedProxy();
   const server = createServer(handler(false));
   server.on("upgrade", onUpgrade);
   server.listen(port, host);
