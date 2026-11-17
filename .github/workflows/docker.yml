@@ -1,13 +1,16 @@
 # Builds the all-in-one image (Dockerfile) for linux/amd64 and linux/arm64 and publishes it to
-# ghcr.io/<owner>/fleet: `latest` and `sha-<commit>` from main, `vX.Y.Z` / `X.Y` from tags,
-# `<branch>` and `sha-<commit>` when run by hand (workflow_dispatch) on another branch.
+# ghcr.io/<owner>/fleet:
+#   a published GitHub release vX.Y.Z  →  `latest`, `vX.Y.Z`, `X.Y` (the panel tells its users)
+#   a push to main                     →  `main`, `sha-<commit>`
+#   run by hand on another branch      →  `<branch>`, `sha-<commit>`
 # Pull requests build it without publishing.
 name: docker
 
 on:
+  release:
+    types: [published]
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -27,13 +30,16 @@ jobs:
         with:
           submodules: true
 
-      - name: CLIProxyAPI version
-        id: cpa
+      - name: Versions
+        id: v
         run: |
           git -C proxy/cliproxyapi fetch --quiet --tags --unshallow || git -C proxy/cliproxyapi fetch --quiet --tags
           echo "version=$(git -C proxy/cliproxyapi describe --tags --always)" >> "$GITHUB_OUTPUT"
           echo "commit=$(git -C proxy/cliproxyapi rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/fleet" >> "$GITHUB_OUTPUT"
+          # A release build is that release; others report package.json's version and their commit.
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then echo "fleet=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"; fi
+          echo "fleet_commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -48,9 +54,12 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.cpa.outputs.image }}
+          images: ${{ steps.v.outputs.image }}
+          # `latest` is the newest (non-pre-)release, never a main build.
+          flavor: latest=false
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+            type=raw,value=main,enable={{is_default_branch}}
             type=sha,format=short
             type=ref,event=branch,enable={{is_not_default_branch}}
             type=semver,pattern=v{{version}}
@@ -64,7 +73,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            CPA_VERSION=${{ steps.cpa.outputs.version }}
-            CPA_COMMIT=${{ steps.cpa.outputs.commit }}
+            CPA_VERSION=${{ steps.v.outputs.version }}
+            CPA_COMMIT=${{ steps.v.outputs.commit }}
+            FLEET_VERSION=${{ steps.v.outputs.fleet }}
+            FLEET_COMMIT=${{ steps.v.outputs.fleet_commit }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

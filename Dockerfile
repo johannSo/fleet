@@ -79,6 +79,12 @@ COPY docker/entrypoint.sh /usr/local/bin/fleet-entrypoint
 # Everything the panel keeps (inventory, auth, TLS CA, ssh keys, proxy accounts) lives in /data:
 # HOME is /data, so its state is /data/.local/state/fleet-panel and its ssh keys /data/.ssh.
 RUN mkdir -p /data && chown node:node /data
+# The release this image is (the panel shows it and checks for newer ones); empty: package.json's.
+ARG FLEET_VERSION=""
+ARG FLEET_COMMIT=""
+ENV FLEET_VERSION=${FLEET_VERSION} \
+    FLEET_COMMIT=${FLEET_COMMIT} \
+    FLEET_INSTALL=docker
 ENV NODE_ENV=production \
     HOME=/data \
     PORT=4747 \
