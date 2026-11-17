@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import {
   Activity,
+  ArrowUpCircle,
   Play,
   ChevronLeft,
   ChevronRight,
@@ -36,10 +37,12 @@ import { TerminalDock } from "./terminal-dock";
 import { TerminalProvider, useTerminals } from "./terminal-provider";
 import { ACCENT, Button, Kbd, Modal, StatusDot, Tooltip } from "./ui";
 import { useInstallPrompt, useMe } from "./pwa";
+import { VersionIndicator, VersionLabel, VersionProvider, useVersion } from "./version";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <FleetProvider>
+      <VersionProvider>
       <TerminalProvider>
         <ActionsProvider>
           <CommandPalette>
@@ -78,6 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </CommandPalette>
         </ActionsProvider>
       </TerminalProvider>
+      </VersionProvider>
     </FleetProvider>
   );
 }
@@ -273,6 +277,7 @@ function Sidebar() {
       </div>
 
       <div className="space-y-2 border-t border-line px-3 py-3">
+        <VersionIndicator />
         <button
           onClick={actions.devices}
           className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-[12.5px] font-medium text-fg-3 transition-colors hover:bg-hover hover:text-fg"
@@ -285,6 +290,8 @@ function Sidebar() {
           <span className="truncate">
             {term.connected ? "Live" : "Reconnecting…"} · panel on <span className="font-mono text-fg-3">{local?.id ?? "localhost"}</span>
           </span>
+          <span className="ml-auto" />
+          <VersionLabel />
         </div>
       </div>
     </aside>
@@ -439,6 +446,7 @@ function BottomNav() {
   const path = usePathname();
   const term = useTerminals();
   const fleet = useFleet();
+  const version = useVersion();
   const [sheet, setSheet] = useState<"more" | null>(null);
   const running = term.sessions.filter((s) => !s.exited).length;
   const termOpen = term.dock !== "closed";
@@ -465,7 +473,14 @@ function BottomNav() {
       ) : null,
     },
     { key: "ai", label: "AI", icon: Sparkles, href: "/ai", active: path === "/ai" && !termOpen && !sheet },
-    { key: "more", label: "More", icon: MenuIcon, onClick: () => setSheet("more"), active: sheet === "more" },
+    {
+      key: "more",
+      label: "More",
+      icon: MenuIcon,
+      onClick: () => setSheet("more"),
+      active: sheet === "more",
+      badge: version.info?.updateAvailable ? <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-green ring-2 ring-bg" /> : null,
+    },
   ];
 
   return (
@@ -544,14 +559,14 @@ export function MachinesView() {
   );
 }
 
-function SheetItem({ icon: Icon, label, hint, onClick, tone }: { icon: typeof Search; label: string; hint?: string; onClick: () => void; tone?: "red" }) {
+function SheetItem({ icon: Icon, label, hint, onClick, tone }: { icon: typeof Search; label: string; hint?: string; onClick: () => void; tone?: "red" | "green" }) {
   return (
     <button onClick={onClick} className="flex min-h-14 w-full cursor-pointer items-center gap-3.5 rounded-xl px-3 py-2.5 text-left active:bg-hl">
-      <span className={clsx("grid size-9 place-items-center rounded-lg", tone === "red" ? "bg-red/10 text-red" : "bg-hl/70 text-fg-2")}>
+      <span className={clsx("grid size-9 place-items-center rounded-lg", tone === "red" ? "bg-red/10 text-red" : tone === "green" ? "bg-green/10 text-green" : "bg-hl/70 text-fg-2")}>
         <Icon size={18} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className={clsx("block text-[15px] font-medium", tone === "red" ? "text-red" : "text-fg")}>{label}</span>
+        <span className={clsx("block text-[15px] font-medium", tone === "red" ? "text-red" : tone === "green" ? "text-green" : "text-fg")}>{label}</span>
         {hint && <span className="block truncate text-[12.5px] text-fg-4">{hint}</span>}
       </span>
       {tone !== "red" && <ChevronRight size={16} className="text-fg-5" />}
@@ -566,6 +581,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const fleet = useFleet();
   const me = useMe();
   const install = useInstallPrompt();
+  const version = useVersion();
   const pending = Object.values(fleet.updates).reduce((a, u) => a + (u?.count ?? 0), 0);
   const go = (fn: () => void) => () => {
     onClose();
@@ -579,6 +595,9 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Modal open={open} onClose={onClose} icon={MenuIcon} tone="neutral" title="More">
       <div className="-mx-2 space-y-0.5 pb-3">
+        {version.info?.updateAvailable && version.info.latest && (
+          <SheetItem icon={ArrowUpCircle} label={`Fleet v${version.info.latest.version} available`} hint={`This panel runs v${version.info.current}`} onClick={go(version.open)} tone="green" />
+        )}
         <SheetItem icon={Search} label="Search & actions" hint="Jump to a machine or run any action" onClick={go(() => palette.setOpen(true))} />
         <SheetItem icon={Activity} label="Activity" hint="Running and finished terminal sessions" onClick={go(() => router.push("/activity"))} />
         <SheetItem icon={Network} label="AI proxy" hint="Subscriptions, API keys, usage" onClick={go(() => router.push("/proxy"))} />

@@ -38,6 +38,7 @@ import { hostName, knownHostnames, lanAddresses } from "./lib/net";
 import { CA_CERT, ensureCerts } from "./lib/tls";
 import type { ClientMsg, ServerMsg, SessionInfo } from "./lib/types";
 import type { ActivityQuery, ActivitySource } from "./lib/activity-types";
+import { versionInfo } from "./lib/release";
 import { CpaError, listModels, listenConfig, management, serviceAction, serviceJournal, serviceState, startSupervisedProxy, testPrompt } from "./lib/cpa";
 import { onUsage, recentRequests, startUsageCollector, usageReport } from "./lib/cpa-usage";
 import type { ProxyStatus, UsageRange, UsageSource } from "./lib/cpa-types";
@@ -853,6 +854,7 @@ app.prepare().then(() => {
     if (viaToken) return json(res, 401, { error: "Sign in first" });
     if (handleAgentApi(req, res, url, actor)) return;
     if (await handleProxy(req, res, url)) return;
+    if (pathname === "/api/version" && req.method === "GET") return json(res, 200, await versionInfo());
     try {
       if (handleActivity(req, res, url)) return;
     } catch (err) {

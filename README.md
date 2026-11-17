@@ -250,7 +250,9 @@ docker compose logs fleet    # the first start prints the panel's password and t
 - **Settings** are in [`.env.example`](.env.example): `FLEET_PASSWORD`, `FLEET_AGENT_URLS`, ports, `FLEET_TAG` to pin a version.
 - **Build it yourself** with `git submodule update --init && docker compose build` (the `build: .` in compose.yml).
 
-Images are built by [`.github/workflows/docker.yml`](.github/workflows/docker.yml): `latest` and `sha-<commit>` from `main`, `vX.Y.Z` from version tags.
+Images are built by [`.github/workflows/docker.yml`](.github/workflows/docker.yml). Every published [release](https://github.com/johannSo/fleet/releases) builds `latest`, `vX.Y.Z` and `X.Y`; every push to `main` builds `main` and `sha-<commit>`. The panel checks GitHub for new releases every few hours and shows **Fleet vX.Y.Z available** in the sidebar (and under **More** on phones) with the command to update. `FLEET_UPDATE_CHECK=0` turns the check off.
+
+To release: bump `version` in `panel/package.json`, then `gh release create vX.Y.Z --generate-notes`.
 
 <p align="center">
   <a href="panel/README.md#phone--lan">Pair your phone</a> · <a href="panel/README.md#agents">Install fleet-agent</a> · <a href="panel/README.md#claude-skill">Install the Claude skill</a> · <a href="panel/README.md#ai-proxy">Set up the AI proxy</a>
