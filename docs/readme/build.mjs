@@ -166,7 +166,7 @@ const MACHINES = [
 ];
 
 function sidebar(t, x, y, h, active) {
-  const items = ["Overview", "Machines", "Activity", "AI chat", "AI proxy", "Claude skill"];
+  const items = ["Overview", "Machines", "Activity", "AI proxy", "Claude skill"];
   let s = rect(x, y, 188, h, { fill: t.bg });
   s += `<line x1="${x + 188}" y1="${y}" x2="${x + 188}" y2="${y + h}" stroke="${t.line}"/>`;
   s += logo(t, x + 18, y + 18, 26) + text(x + 52, y + 36, "fleet", { size: 15, fill: t.fg, font: MONO, weight: 700 });
@@ -189,7 +189,7 @@ function hero(t) {
   s += logo(t, 466, 62, 68);
   s += text(550, 117, "fleet", { size: 68, fill: t.fg, font: MONO, weight: 800, ls: -2 });
   s += text(W / 2, 176, "A control panel for the computers you run.", { size: 24, fill: t.fg2, font: DISPLAY, weight: 600, anchor: "middle" });
-  const tags = [["ssh", t.blue], ["fleet-agent", t.magenta], ["terminal", t.cyan], ["ai chat", t.green], ["ai proxy", t.orange], ["claude skill", t.yellow]];
+  const tags = [["ssh", t.blue], ["fleet-agent", t.magenta], ["terminal", t.cyan], ["wake-on-lan", t.green], ["ai proxy", t.orange], ["claude skill", t.yellow]];
   let tw = tags.reduce((a, [l]) => a + l.length * 7.2 + 34, 0);
   let tx = W / 2 - tw / 2;
   for (const [l, c] of tags) {
@@ -264,47 +264,6 @@ function terminal(t) {
   s += `<line x1="${wx}" y1="${wy + wh - 34}" x2="${wx + ww}" y2="${wy + wh - 34}" stroke="${t.line}"/>`;
   s += text(wx + 20, wy + wh - 13, "● running on thinkpad over ssh · you can type into it", { size: 11.5, fill: t.fg4, font: MONO });
   s += text(wx + ww - 20, wy + wh - 13, "sessions survive a reload", { size: 11.5, fill: t.fg5, font: MONO, anchor: "end" });
-  return { W, H, s };
-}
-
-function chat(t) {
-  const W = 1280, H = 600;
-  let s = backdrop(t, W, H);
-  const wx = 190, wy = 48, ww = 900, wh = 520;
-  s += windowFrame(t, wx, wy, ww, wh, "");
-  s += text(wx + 80, wy + 25.5, "AI chat", { size: 13, fill: t.fg, weight: 600 }) + text(wx + 136, wy + 25.5, "· vps-fra1", { size: 13, fill: t.fg4, font: MONO });
-  // mode toggle
-  s += rect(wx + ww - 196, wy + 8, 180, 25, { rx: 7, fill: t.bg, stroke: t.line });
-  s += rect(wx + ww - 194, wy + 10, 92, 21, { rx: 5.5, fill: t.sel }) + text(wx + ww - 148, wy + 25, "Ask first", { size: 11.5, fill: t.fg, anchor: "middle", weight: 600 });
-  s += text(wx + ww - 59, wy + 25, "Auto", { size: 11.5, fill: t.fg5, anchor: "middle" });
-  const cx = wx + 36;
-  // user message
-  const um = "nginx keeps failing on vps-fra1. Why?";
-  s += rect(wx + ww - 36 - 330, wy + 66, 330, 40, { rx: 12, fill: t.sel }) + text(wx + ww - 36 - 16, wy + 91, um, { size: 13.5, fill: t.fg, anchor: "end" });
-  s += text(cx, wy + 140, "Checking the unit first.", { size: 13.5, fill: t.fg2 });
-  // done command card
-  let y = wy + 158;
-  s += rect(cx, y, ww - 72, 76, { rx: 10, fill: t.raised, stroke: t.line });
-  s += text(cx + 16, y + 22, "run_command", { size: 11, fill: t.fg5, font: MONO }) + text(cx + 110, y + 22, "vps-fra1", { size: 11, fill: t.cyan, font: MONO });
-  s += text(cx + ww - 88, y + 22, "exit 3", { size: 11, fill: t.red, font: MONO, anchor: "end" });
-  s += text(cx + 16, y + 44, "$ systemctl status nginx --no-pager", { size: 12.5, fill: t.fg, font: MONO });
-  s += text(cx + 16, y + 64, "Active: failed (Result: exit-code) · bind() to 0.0.0.0:443 failed (98: Address in use)", { size: 11.5, fill: t.fg4, font: MONO });
-  s += text(cx, y + 108, "Something else holds port 443. Let me see what.", { size: 13.5, fill: t.fg2 });
-  // pending command card
-  y += 128;
-  s += rect(cx, y, ww - 72, 112, { rx: 10, fill: t.raised, stroke: t.blue, sw: 1.5 });
-  s += text(cx + 16, y + 22, "run_command", { size: 11, fill: t.fg5, font: MONO }) + text(cx + 110, y + 22, "vps-fra1", { size: 11, fill: t.cyan, font: MONO });
-  const wp = pill(t, cx + ww - 72 - 16 - 140, y + 9, "waiting for you", t.yellow);
-  s += `<g transform="translate(${ww - 72 - 16 - wp.w - (ww - 72 - 16 - 140)} 0)">${wp.svg}</g>`;
-  s += text(cx + 16, y + 48, "$ sudo ss -ltnp 'sport = :443'", { size: 12.5, fill: t.fg, font: MONO });
-  s += rect(cx + 16, y + 66, 92, 30, { rx: 8, fill: t.blue }) + text(cx + 62, y + 85.5, "Approve", { size: 12.5, fill: t.onAccent, anchor: "middle", weight: 600 });
-  s += rect(cx + 116, y + 66, 72, 30, { rx: 8, fill: t.hover, stroke: t.line3 }) + text(cx + 152, y + 85.5, "Deny", { size: 12.5, fill: t.fg2, anchor: "middle", weight: 500 });
-  s += text(cx + 204, y + 85.5, "Every command and file write waits for a yes in Ask first.", { size: 11.5, fill: t.fg5 });
-  // input
-  y = wy + wh - 66;
-  s += rect(cx, y, ww - 72, 44, { rx: 12, fill: t.bg, stroke: t.line3 });
-  s += text(cx + 18, y + 27, "Ask about vps-fra1…", { size: 13.5, fill: t.fg5 });
-  s += rect(cx + ww - 72 - 40, y + 8, 28, 28, { rx: 8, fill: t.blue }) + `<path d="M${cx + ww - 72 - 26} ${y + 28} v-12 m-5 5 l5 -5 l5 5" stroke="${t.onAccent}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
   return { W, H, s };
 }
 
@@ -410,7 +369,6 @@ function button(t, label, icon, primary) {
 const IMAGES = {
   hero,
   terminal,
-  chat,
   phones,
   "heading-glance": (t) => heading(t, "Health and action, ", "side by side"),
   "heading-everything": (t) => heading(t, "One panel, ", "every job"),

@@ -49,13 +49,6 @@
 <p align="center">Every action runs in a real terminal tab you can watch and answer.<br />Sessions keep running on the server, so a reload reattaches with scrollback.</p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/chat-dark.webp" />
-  <img src="docs/readme/chat-light.webp" alt="The AI chat on a VPS: it checked why nginx fails, found port 443 in use, and waits for Approve or Deny before running the next command." width="100%" />
-</picture>
-
-<p align="center">Ask Claude why a service is failing. It works over the same ssh,<br />and in <strong>Ask first</strong>, the default, every command waits for your yes.</p>
-
-<picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/phones-dark.webp" />
   <img src="docs/readme/phones-light.webp" alt="Two phones: the Overview with an offline laptop and a Wake button, and a full-screen terminal with an extra-keys row for esc, tab, ctrl, alt and the arrows." width="100%" />
 </picture>
@@ -88,7 +81,7 @@
   </tr>
   <tr>
     <td><strong>Command palette.</strong><br /><kbd>Ctrl</kbd>+<kbd>K</kbd> jumps to any machine and runs any action. <kbd>Ctrl</kbd>+<kbd>`</kbd> toggles the terminal.</td>
-    <td><strong>An activity log of everything.</strong><br />Every session, action, AI command and approval, with who started it, its exit code and the full output.</td>
+    <td><strong>An activity log of everything.</strong><br />Every terminal session, action and sign-in, with who started it, its exit code and the full output.</td>
   </tr>
 </table>
 
@@ -110,7 +103,7 @@
 - **Home network only.** It runs on an always-on machine on your LAN. For access away from home use Tailscale or `ssh -L`, never port-forwarding.
 - **Phones pair by QR code.** One-time codes, valid five minutes. Sessions last 180 days and can be revoked one by one.
 - **Its own certificate authority, name-constrained.** HTTPS for phones comes from a small CA limited to `localhost`, `.local`, the machine's hostname and private ranges, so even a leaked key can't impersonate a real website.
-- **Nothing powerful happens silently.** Actions run in terminal tabs you can watch. The AI chat asks before every command and file write unless you switch it to **Auto**.
+- **Nothing powerful happens silently.** Actions run in terminal tabs you can watch.
 - **The agent can't take orders.** `fleet-agent` listens on no port and runs only its four built-in read-only collectors. Every action stays on ssh.
 
 <p align="center">
@@ -131,7 +124,7 @@
 ```mermaid
 flowchart LR
   you(["You<br/>laptop · phone app"]):::accent
-  panel["Fleet panel<br/>inventory · terminals<br/>actions · AI chat"]:::accent
+  panel["Fleet panel<br/>inventory · terminals<br/>actions"]:::accent
   machines["Your machines<br/>desktops · laptops · Pi · VPS"]:::node
   agent["fleet-agent<br/>report-only, optional"]:::node
   proxy["AI proxy<br/>CLIProxyAPI :8317"]:::node
@@ -146,14 +139,14 @@ flowchart LR
   classDef node fill:#1a1b26,stroke:#bb9af7,color:#c0caf5
 ```
 
-- **The inventory is the truth.** It lives in the panel's SQLite database. The Claude skill and the AI chat read it there and never keep a second copy.
+- **The inventory is the truth.** It lives in the panel's SQLite database. The Claude skill reads it there and never keep a second copy.
 - **One ssh round-trip per probe.** Multiplexed connections (`ControlMaster`) make a probe cost about 100 ms, every 3 s while you watch and every 30 s otherwise.
 - **The same scripts, two ways in.** The collectors in [`agent/collectors/`](agent/collectors) run over ssh, or inside `fleet-agent`, which pushes their output instead of being polled.
-- **Built with** TypeScript, Next.js 16 with a custom server, React 19, Tailwind 4, xterm.js and node-pty, the Claude Agent SDK, Go for the agent, and [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), unmodified, as a submodule.
+- **Built with** TypeScript, Next.js 16 with a custom server, React 19, Tailwind 4, xterm.js and node-pty, Go for the agent, and [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), unmodified, as a submodule.
 
 | | |
 |---|---|
-| [`panel/`](panel) | The control panel: inventory, overview, terminals, actions, AI chat, AI proxy pages, Claude skill |
+| [`panel/`](panel) | The control panel: inventory, overview, terminals, actions, AI proxy pages, Claude skill |
 | [`agent/`](agent) | `fleet-agent` (Go) and the collector scripts the panel and the agent share |
 | [`proxy/`](proxy) | CLIProxyAPI as a submodule, and `install.sh` to run it as `fleet-proxy.service` |
 | [`clickhouse/`](clickhouse) | ClickHouse for the AI proxy's request log, outside Docker |
@@ -192,14 +185,6 @@ Linux: desktops, laptops, a Raspberry Pi, servers, a VPS. Updates use the right 
 <br />
 
 No. It is for one operator and their own machines. There are no accounts or roles: whoever is signed in runs commands as you. The Activity log still records which device did what.
-
-</details>
-
-<details>
-<summary><strong>What does the AI chat cost, and can it go wrong?</strong></summary>
-<br />
-
-It uses the Claude Agent SDK with the panel machine's Claude Code login, or goes through the AI proxy, so it counts against that account. It gets three tools only, `run_command`, `read_file` and `write_file`, on your machines as your user. It can make mistakes, which is why **Ask first** is the default and every command it ran is in the Activity log.
 
 </details>
 
