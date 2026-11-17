@@ -5,7 +5,8 @@
 //
 // Needs rsvg-convert (librsvg), ImageMagick (`magick`) and cwebp on PATH, and the panel's fonts,
 // Inter / Inter Display and JetBrains Mono, installed or reachable through FONTCONFIG_FILE.
-// The mock-ups use made-up machines; nothing here comes from a real inventory.
+// The hero is a mock-up with made-up machines. The shot-* images frame the real screenshots in
+// screenshots/, taken from a development panel with a made-up inventory.
 import { mkdtempSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -221,119 +222,55 @@ function hero(t) {
   return { W, H, s };
 }
 
-function terminal(t) {
-  const W = 1280, H = 560;
-  let s = backdrop(t, W, H);
-  const wx = 90, wy = 56, ww = 1100, wh = 470;
-  s += windowFrame(t, wx, wy, ww, wh, "");
-  // tabs
-  const tabs = [["update", "thinkpad", true], ["shell", "workstation"], ["logs", "nginx · vps-fra1"], ["exec", "3 machines"]];
-  let tx = wx + 80;
-  for (const [k, n, act] of tabs) {
-    const label = `${k} · ${n}`;
-    const tw = label.length * 7.4 + 44;
-    if (act) s += rect(tx, wy + 7, tw, 27, { rx: 7, fill: t.bg, stroke: t.line3 });
-    s += circle(tx + 14, wy + 20.5, 3.5, act ? t.green : k === "logs" ? t.cyan : t.fg5);
-    s += text(tx + 24, wy + 25, esc(label), { size: 12, fill: act ? t.fg : t.fg4, font: MONO, weight: act ? 600 : 400 });
-    s += text(tx + tw - 13, wy + 25, "×", { size: 13, fill: t.fg5, anchor: "middle" });
-    tx += tw + 6;
-  }
-  s += text(wx + ww - 20, wy + 25, "⌃`", { size: 12, fill: t.fg5, font: MONO, anchor: "end" });
-  const L = [
-    [[t.green, "me@thinkpad"], [t.fg5, ":"], [t.blue, "~"], [t.fg, " $ sudo dnf upgrade --refresh"]],
-    [[t.fg4, "Updating and loading repositories:"]],
-    [[t.fg2, " Fedora 43 - x86_64 - Updates      "], [t.green, "100% "], [t.fg4, "| 4.1 MiB/s |  12.3 MiB |  00m03s"]],
-    [[t.fg2, " Fedora 43 - x86_64                "], [t.green, "100% "], [t.fg4, "| 0.0 B/s   |   0.0 B   |  00m00s"]],
-    [[t.fg4, "Repositories loaded."]],
-    [[t.fg, "Package                  Arch    Version              Repository      Size"]],
-    [[t.magenta, "Upgrading:"]],
-    [[t.fg2, " kernel                  x86_64  "], [t.cyan, "6.17.8-300.fc43       "], [t.fg4, "updates     0.0   B"]],
-    [[t.fg2, " mesa-dri-drivers        x86_64  "], [t.cyan, "25.2.6-1.fc43         "], [t.fg4, "updates    46.9 MiB"]],
-    [[t.fg2, " firefox                 x86_64  "], [t.cyan, "145.0-1.fc43          "], [t.fg4, "updates   281.0 MiB"]],
-    [[t.fg5, "   … 9 more"]],
-    [[t.fg, "Transaction Summary:"]],
-    [[t.fg2, " Upgrading:        "], [t.yellow, "12 packages"]],
-    [[t.fg, "Is this ok [y/N]: "], [t.blue, "█"]],
-  ];
-  L.forEach((line, i) => {
-    let lx = wx + 28;
-    const y = wy + 76 + i * 25;
-    s += `<text x="${lx}" y="${y}" font-family="${MONO}" font-size="13.5" xml:space="preserve">${line.map(([c, str]) => `<tspan fill="${c}">${esc(str)}</tspan>`).join("")}</text>`;
-  });
-  // status line
-  s += `<line x1="${wx}" y1="${wy + wh - 34}" x2="${wx + ww}" y2="${wy + wh - 34}" stroke="${t.line}"/>`;
-  s += text(wx + 20, wy + wh - 13, "● running on thinkpad over ssh · you can type into it", { size: 11.5, fill: t.fg4, font: MONO });
-  s += text(wx + ww - 20, wy + wh - 13, "sessions survive a reload", { size: 11.5, fill: t.fg5, font: MONO, anchor: "end" });
-  return { W, H, s };
+// Real screenshots (docs/readme/screenshots/, 1440×900 at 2×, phones 393×852 at 3×), taken from a
+// development panel with a made-up inventory around the machine it ran on.
+function shotImg(name, x, y, w, h, crop, rx = 14) {
+  const [cx, cy, cw, ch] = crop;
+  const id = `clip-${name}-${x}-${y}`;
+  return `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}"/></clipPath>
+    <svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="${cx} ${cy} ${cw} ${ch}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})">
+      <image href="${name}.png" x="0" y="0" width="${SHOTS[name][0]}" height="${SHOTS[name][1]}"/>
+    </svg>`;
+}
+const SHOTS = {
+  overview: [1440, 900], node: [1440, 900], terminal: [1440, 900], update: [1440, 900], palette: [1440, 900],
+  "mobile-overview": [393, 852], "mobile-node": [393, 852],
+};
+function framed(t, x, y, w, h, name, crop, rx = 14) {
+  return `${rect(x, y + 10, w, h, { rx, fill: "#000", opacity: t === THEMES.dark ? 0.4 : 0.14 })}
+    ${shotImg(name, x, y, w, h, crop, rx)}
+    ${rect(x + 0.5, y + 0.5, w - 1, h - 1, { rx, stroke: t.line3, sw: 1 })}`;
 }
 
-function phone(t, x, y, inner) {
-  const w = 300, h = 560;
-  return `${rect(x, y + 8, w, h, { rx: 44, fill: "#000", opacity: t === THEMES.dark ? 0.35 : 0.1 })}
-    ${rect(x, y, w, h, { rx: 44, fill: t.raised, stroke: t.line3, sw: 1.5 })}
-    ${rect(x + 10, y + 10, w - 20, h - 20, { rx: 35, fill: t.bg })}
-    <clipPath id="ph${x}"><rect x="${x + 10}" y="${y + 10}" width="${w - 20}" height="${h - 20}" rx="35"/></clipPath>
-    <g clip-path="url(#ph${x})">${inner(x + 10, y + 10, w - 20, h - 20)}</g>
-    ${rect(x + w / 2 - 48, y + 20, 96, 26, { rx: 13, fill: "#000" })}`;
+function screenshot(name) {
+  const make = (t) => {
+    const W = 1280, w = 1160, h = 725, H = h + 112;
+    return { W, H, s: backdrop(t, W, H) + framed(t, 60, 52, w, h, name, [0, 0, 1440, 900]), assets: [name] };
+  };
+  return make;
 }
+
+function dialogs(t) {
+  const W = 1280, H = 680;
+  let s = backdrop(t, W, H);
+  s += framed(t, 48, 56, 576, 560, "update", UPDATE_CROP, 14);
+  s += framed(t, 656, 56, 576, 560, "palette", PALETTE_CROP, 14);
+  return { W, H, s, assets: ["update", "palette"] };
+}
+const UPDATE_CROP = [404, 92, 616, 600];
+const PALETTE_CROP = [404, 104, 616, 600];
 
 function phones(t) {
-  const W = 1280, H = 640;
+  const W = 1280, H = 740;
   let s = backdrop(t, W, H);
-  // left phone: overview list
-  s += phone(t, 300, 40, (x, y, w) => {
-    let r = text(x + 26, y + 46, "9:41", { size: 13, fill: t.fg, weight: 600 });
-    r += logo(t, x + 20, y + 70, 24) + text(x + 52, y + 87, "Overview", { size: 17, fill: t.fg, font: DISPLAY, weight: 700 });
-    MACHINES.forEach((m, i) => {
-      const cy = y + 112 + i * 66;
-      r += rect(x + 14, cy, w - 28, 58, { rx: 12, fill: t.raised, stroke: t.line });
-      r += circle(x + 32, cy + 22, 4.5, m.offline ? t.fg5 : t.green);
-      r += text(x + 44, cy + 26.5, esc(m.name), { size: 13.5, fill: m.offline ? t.fg4 : t.fg, weight: 600 });
-      if (m.offline) {
-        r += rect(x + w - 86, cy + 15, 58, 26, { rx: 7, fill: t.blue, opacity: 0.16 }) + text(x + w - 57, cy + 32, "Wake", { size: 11.5, fill: t.blue, anchor: "middle", weight: 600 });
-        r += text(x + 32, cy + 45, "offline", { size: 10.5, fill: t.fg5, font: MONO });
-      } else {
-        r += text(x + 32, cy + 45, `cpu ${Math.round(m.cpu * 100)}% · mem ${Math.round(m.mem * 100)}%`, { size: 10.5, fill: t.fg5, font: MONO });
-        r += sparkline(x + w - 112, cy + 12, 84, 30, series(m.seed, 18, m.cpu, 0.4), t.blue, "spark");
-      }
-    });
-    return r;
-  });
-  // right phone: full-screen terminal with the extra-keys row
-  s += phone(t, 680, 40, (x, y, w, h) => {
-    let r = text(x + 26, y + 46, "9:41", { size: 13, fill: t.fg, weight: 600 });
-    r += rect(x, y + 62, w, 36, { fill: t.raised }) + circle(x + 20, y + 80, 3.5, t.green) + text(x + 30, y + 84.5, "shell · rpi-5", { size: 12, fill: t.fg, font: MONO, weight: 600 });
-    const lines = [
-      [[t.green, "pi@rpi-5"], [t.fg, " $ df -h /"]],
-      [[t.fg4, "Filesystem  Size Used Avail Use%"]],
-      [[t.fg2, "/dev/sda2   117G 106G  6.0G "], [t.orange, " 95%"]],
-      [[t.green, "pi@rpi-5"], [t.fg, " $ docker system prune"]],
-      [[t.fg4, "WARNING! This will remove:"]],
-      [[t.fg4, "  - all stopped containers"]],
-      [[t.fg4, "  - all dangling images"]],
-      [[t.fg, "Are you sure? [y/N] "], [t.blue, "█"]],
-    ];
-    lines.forEach((line, i) => {
-      r += `<text x="${x + 16}" y="${y + 124 + i * 21}" font-family="${MONO}" font-size="11.5" xml:space="preserve">${line.map(([c, str]) => `<tspan fill="${c}">${esc(str)}</tspan>`).join("")}</text>`;
-    });
-    // extra keys + keyboard hint
-    const ky = y + h - 214;
-    r += rect(x, ky, w, 214, { fill: t.raised });
-    const keys = ["esc", "tab", "ctrl", "alt", "↑", "↓", "←", "→"];
-    const kw = (w - 16 - 7 * 4) / 8;
-    keys.forEach((k, i) => {
-      r += rect(x + 8 + i * (kw + 4), ky + 10, kw, 30, { rx: 6, fill: k === "ctrl" ? t.sel : t.hover, stroke: t.line });
-      r += text(x + 8 + i * (kw + 4) + kw / 2, ky + 29.5, k, { size: 11, fill: k === "ctrl" ? t.fg : t.fg2, font: MONO, anchor: "middle" });
-    });
-    for (let row = 0; row < 3; row++) {
-      const n = [10, 9, 7][row];
-      const bw = (w - 16 - (n - 1) * 5) / n;
-      const off = (w - 16 - (n * bw + (n - 1) * 5)) / 2;
-      for (let i = 0; i < n; i++) r += rect(x + 8 + off + i * (bw + 5), ky + 54 + row * 46, bw, 38, { rx: 6, fill: t.hl, opacity: 0.7 });
-    }
-    return r;
-  });
-  return { W, H, s };
+  const iw = 290, ih = Math.round((290 * 852) / 393);
+  for (const [i, name] of ["mobile-overview", "mobile-node"].entries()) {
+    const x = 330 + i * 330, y = 46;
+    s += rect(x - 10, y - 10 + 10, iw + 20, ih + 20, { rx: 44, fill: "#000", opacity: t === THEMES.dark ? 0.4 : 0.14 });
+    s += rect(x - 10, y - 10, iw + 20, ih + 20, { rx: 44, fill: t.raised, stroke: t.line3, sw: 1.5 });
+    s += shotImg(name, x, y, iw, ih, [0, 0, 393, 852], 34);
+  }
+  return { W, H, s, assets: ["mobile-overview", "mobile-node"] };
 }
 
 // Section headings: one line of display type, the last words in the accent gradient.
@@ -368,8 +305,11 @@ function button(t, label, icon, primary) {
 
 const IMAGES = {
   hero,
-  terminal,
-  phones,
+  "shot-overview": screenshot("overview"),
+  "shot-node": screenshot("node"),
+  "shot-terminal": screenshot("terminal"),
+  "shot-dialogs": dialogs,
+  "shot-phones": phones,
   "heading-glance": (t) => heading(t, "Health and action, ", "side by side"),
   "heading-everything": (t) => heading(t, "One panel, ", "every job"),
   "heading-network": (t) => heading(t, "Your network, ", "your rules"),
@@ -388,7 +328,8 @@ try {
   for (const [name, make] of Object.entries(IMAGES)) {
     if (only.length && !only.some((o) => name.startsWith(o))) continue;
     for (const [mode, t] of Object.entries(THEMES)) {
-      const { W, H, s, trim } = make(t);
+      const { W, H, s, trim, assets = [] } = make(t);
+      for (const a of assets) execFileSync("magick", [join(OUT, "screenshots", `${a}.webp`), "-resize", `${SHOTS[a][0] * 2}x`, join(tmp, `${a}.png`)]);
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${defs(t, W, H)}${s}</svg>`;
       const base = join(tmp, `${name}-${mode}`);
       writeFileSync(`${base}.svg`, svg);

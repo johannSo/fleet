@@ -42,18 +42,39 @@
 <p align="center">Tell at a glance that everything is fine, or exactly what isn't,<br />and get from "something's wrong" to fixing it in a couple of steps.</p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/terminal-dark.webp" />
-  <img src="docs/readme/terminal-light.webp" alt="The terminal dock with tabs for an update on a laptop, a shell, a log tail and a command on three machines. The update waits at dnf's confirmation prompt." width="100%" />
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shot-overview-dark.webp" />
+  <img src="docs/readme/shot-overview-light.webp" alt="Screenshot of the Overview: totals for machines online, CPU, memory, storage, pending updates and what needs attention, a live card for the laptop, and two offline machines with Retry, Wake and Copy ssh." width="100%" />
+</picture>
+
+<p align="center">The Overview puts what needs attention first. An offline machine gets Retry,<br />Wake-on-LAN and a copyable ssh command, not an alarm.</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shot-node-dark.webp" />
+  <img src="docs/readme/shot-node-light.webp" alt="Screenshot of a machine's page: model and OS, Open shell, Update, Run command and Reboot buttons, live CPU, memory and network charts, vitals and system details." width="100%" />
+</picture>
+
+<p align="center">Each machine's page has live charts, vitals and indexed hardware,<br />with a shell, updates, commands and reboot one click away.</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shot-terminal-dark.webp" />
+  <img src="docs/readme/shot-terminal-light.webp" alt="Screenshot of the terminal dock open under a machine's page, with two shell tabs and the output of uptime, df and free." width="100%" />
 </picture>
 
 <p align="center">Every action runs in a real terminal tab you can watch and answer.<br />Sessions keep running on the server, so a reload reattaches with scrollback.</p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/phones-dark.webp" />
-  <img src="docs/readme/phones-light.webp" alt="Two phones: the Overview with an offline laptop and a Wake button, and a full-screen terminal with an extra-keys row for esc, tab, ctrl, alt and the arrows." width="100%" />
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shot-dialogs-dark.webp" />
+  <img src="docs/readme/shot-dialogs-light.webp" alt="Screenshots of the Update dialog listing 243 packages with old and new versions and the detected yay -Syu command, and the command palette with machines, Open shell and actions." width="100%" />
 </picture>
 
-<p align="center">The phone is not a read-only view. Install it as an app, pair by scanning a code,<br />and run a shell full-screen with the keys a phone keyboard leaves out.</p>
+<p align="center">Updates use the right tool for each OS and show what's coming before they start.<br /><kbd>Ctrl</kbd>+<kbd>K</kbd> jumps to any machine and runs any action.</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shot-phones-dark.webp" />
+  <img src="docs/readme/shot-phones-light.webp" alt="Two phone screenshots: the Overview with an offline machine and a Wake button, and a machine's page with Shell, Update, Run and Power buttons." width="100%" />
+</picture>
+
+<p align="center">The phone is not a read-only view. Install it as an app, pair by scanning a code,<br />and act on any machine from the couch.</p>
 
 <br />
 
