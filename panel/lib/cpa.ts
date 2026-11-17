@@ -6,8 +6,8 @@
  *
  * Only server.ts (and modules it imports) may use this.
  */
-import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { STATE_DIR } from "./net";
@@ -110,6 +110,7 @@ export interface ServiceState {
 }
 
 export async function serviceState(): Promise<ServiceState> {
+  if (SUPERVISED) return supervisedState();
   try {
     const { stdout } = await run("systemctl", ["--user", "show", PROXY_UNIT, "-p", "LoadState,ActiveState,SubState,MainPID,ActiveEnterTimestamp,MemoryCurrent", "--timestamp=unix"], { timeout: 5000 });
     const v = Object.fromEntries(
@@ -134,17 +135,132 @@ export async function serviceState(): Promise<ServiceState> {
 }
 
 export async function serviceAction(action: "start" | "stop" | "restart"): Promise<void> {
+  if (SUPERVISED) return supervisedAction(action);
   await run("systemctl", ["--user", action, PROXY_UNIT], { timeout: 30_000 });
 }
 
 /** Recent service output (startup errors land here, not in CPA's own log). */
 export async function serviceJournal(lines = 200): Promise<string> {
+  if (SUPERVISED) return sup.journal.slice(-Math.min(2000, lines)).join("\n") + "\n";
   try {
     const { stdout } = await run("journalctl", ["--user", "-u", PROXY_UNIT, "-n", String(Math.min(2000, lines)), "--no-pager", "-o", "short-iso"], { timeout: 8000, maxBuffer: 8 << 20 });
     return stdout;
   } catch (err) {
     return String((err as Error).message);
   }
+}
+
+/* ---------------- supervised: the panel runs CLIProxyAPI itself ---------------- */
+
+/*
+ * In the Docker image there is no systemd: $FLEET_PROXY_BIN names the CLIProxyAPI binary and
+ * the panel runs it as a child process, restarting it when it crashes. Stopping it from the
+ * panel leaves a `.stopped` marker next to its config, so it stays stopped across restarts.
+ */
+const PROXY_BIN = process.env.FLEET_PROXY_BIN || "";
+const SUPERVISED = !!PROXY_BIN;
+const STOPPED_MARKER = path.join(PROXY_DIR, ".stopped");
+
+const g = globalThis as unknown as {
+  __fleetProxy?: { child: ChildProcess | null; since: number | null; state: "active" | "inactive" | "failed" | "activating"; journal: string[]; restarts: number; timer: NodeJS.Timeout | null };
+};
+const sup = (g.__fleetProxy ??= { child: null, since: null, state: "inactive", journal: [], restarts: 0, timer: null });
+
+function journalLine(line: string) {
+  sup.journal.push(`${new Date().toISOString().slice(0, 19)}Z cli-proxy-api: ${line}`);
+  if (sup.journal.length > 2000) sup.journal.splice(0, sup.journal.length - 2000);
+}
+
+function spawnProxy() {
+  if (sup.child) return;
+  if (sup.timer) clearTimeout(sup.timer);
+  sup.timer = null;
+  if (!existsSync(PROXY_CONFIG)) {
+    sup.state = "failed";
+    journalLine(`no config at ${PROXY_CONFIG}`);
+    return;
+  }
+  const child = spawn(PROXY_BIN, ["-config", PROXY_CONFIG], { cwd: PROXY_DIR, stdio: ["ignore", "pipe", "pipe"] });
+  sup.child = child;
+  sup.state = "active";
+  sup.since = Date.now();
+  let partial = "";
+  const onData = (d: Buffer) => {
+    const lines = (partial + d.toString("utf8")).split("\n");
+    partial = lines.pop() ?? "";
+    for (const l of lines) if (l.trim()) journalLine(l);
+  };
+  child.stdout?.on("data", onData);
+  child.stderr?.on("data", onData);
+  child.on("error", (err) => journalLine(`couldn't start: ${err.message}`));
+  child.on("exit", (code, signal) => {
+    if (sup.child !== child) return;
+    sup.child = null;
+    sup.since = null;
+    const wanted = sup.state === "inactive"; // stop() set this before killing it
+    journalLine(`exited (${signal ?? `code ${code}`})`);
+    if (wanted) return;
+    sup.state = "failed";
+    // Crashed: back off 1s, 2s, 4s… up to 30s; a run that lasted a minute resets it.
+    const delay = Math.min(30_000, 1000 * 2 ** Math.min(sup.restarts++, 5));
+    sup.timer = setTimeout(() => {
+      sup.timer = null;
+      if (sup.state === "failed") spawnProxy();
+    }, delay);
+  });
+  setTimeout(() => {
+    if (sup.child === child) sup.restarts = 0;
+  }, 60_000).unref();
+}
+
+function stopProxy(): Promise<void> {
+  if (sup.timer) clearTimeout(sup.timer);
+  sup.timer = null;
+  sup.state = "inactive";
+  const child = sup.child;
+  if (!child) return Promise.resolve();
+  return new Promise((resolve) => {
+    const kill = setTimeout(() => child.kill("SIGKILL"), 10_000);
+    child.once("exit", () => {
+      clearTimeout(kill);
+      resolve();
+    });
+    child.kill("SIGTERM");
+  });
+}
+
+/** Starts the supervised proxy at boot (unless it was stopped from the panel). No-op under systemd. */
+export function startSupervisedProxy() {
+  if (!SUPERVISED || existsSync(STOPPED_MARKER)) return;
+  spawnProxy();
+  process.once("exit", () => sup.child?.kill("SIGTERM"));
+  // docker stop: let CLIProxyAPI finish cleanly before the panel exits.
+  for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => void stopProxy().finally(() => process.exit(0)));
+}
+
+function supervisedState(): ServiceState {
+  let memory: number | null = null;
+  const pid = sup.child?.pid ?? null;
+  if (pid) {
+    try {
+      const kb = readFileSync(`/proc/${pid}/status`, "utf8").match(/^VmRSS:\s+(\d+)/m)?.[1];
+      if (kb) memory = Number(kb) * 1024;
+    } catch {
+      /* gone */
+    }
+  }
+  return { installed: existsSync(PROXY_BIN), active: sup.state, sub: sup.child ? "running" : sup.state === "failed" ? "auto-restart" : "dead", pid, since: sup.since, memory };
+}
+
+async function supervisedAction(action: "start" | "stop" | "restart"): Promise<void> {
+  if (action === "stop") {
+    writeFileSync(STOPPED_MARKER, "");
+    return stopProxy();
+  }
+  rmSync(STOPPED_MARKER, { force: true });
+  if (action === "restart") await stopProxy();
+  sup.restarts = 0;
+  spawnProxy();
 }
 
 /* ---------------- client side of the proxy ---------------- */

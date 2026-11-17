@@ -1,0 +1,14 @@
+.git
+**/.git
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+panel/next-env.d.ts
+panel/dist
+agent/bin
+proxy/bin
+**/.env
+**/.env.*
+.github
+compose.yml
+Dockerfile

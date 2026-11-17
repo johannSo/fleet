@@ -1,0 +1,131 @@
+# Fleet, all in one: the panel with the AI proxy (CLIProxyAPI) inside, and ClickHouse for the
+# proxy's Traffic log.
+#
+#   cp .env.example .env     # set CLICKHOUSE_PASSWORD (and FLEET_PASSWORD if you like)
+#   docker compose up -d
+#   docker compose logs fleet   # the first start prints the panel's password and the proxy API key
+#
+# Panel http://<host>:4747 · agents https://<host>:4443 · AI proxy http://<host>:8317/v1
+#
+# The panel uses the host's network: Wake-on-LAN broadcasts, the addresses it gives fleet-agent
+# and the proxy URLs it shows are the host's. It reaches every machine over ssh (the Docker host
+# too: add it like any other machine), with the key it makes under Add machine or one you put
+# in the fleet-data volume's .ssh/.
+name: fleet
+
+services:
+  fleet:
+    image: ghcr.io/johannso/fleet:${FLEET_TAG:-latest}
+    build: .
+    container_name: fleet
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      PORT: ${FLEET_PORT:-4747}
+      TLS_PORT: ${FLEET_TLS_PORT:-4443}
+      PROXY_PORT: ${PROXY_PORT:-8317}
+      FLEET_PASSWORD: ${FLEET_PASSWORD:-}
+      FLEET_AGENT_URLS: ${FLEET_AGENT_URLS:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      TZ: ${TZ:-UTC}
+      CLICKHOUSE_URL: http://127.0.0.1:${CLICKHOUSE_PORT:-8123}
+      CLICKHOUSE_USER: fleet
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB: ai
+    volumes:
+      - fleet-data:/data
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.36.3
+    container_name: fleet-clickhouse
+    restart: unless-stopped
+    # Loopback only: the panel (host network) is its one client.
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_PORT:-8123}:8123"
+    environment:
+      CLICKHOUSE_DB: ai
+      CLICKHOUSE_USER: fleet
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "0"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    configs:
+      - source: clickhouse-config
+        target: /etc/clickhouse-server/config.d/fleet.xml
+      - source: clickhouse-users
+        target: /etc/clickhouse-server/users.d/fleet.xml
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    mem_limit: ${CLICKHOUSE_MEM_LIMIT:-2g}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 6
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
+
+volumes:
+  fleet-data:
+  clickhouse-data:
+
+# The same settings as clickhouse/config.d/fleet.xml and clickhouse/users.d/fleet.xml, inline so
+# this file works on its own (without a checkout of the repo).
+configs:
+  clickhouse-config:
+    content: |
+      <!-- Kind to small machines: no system log tables, no log files, small caches. -->
+      <clickhouse>
+          <logger>
+              <level>warning</level>
+              <console>1</console>
+              <log remove="remove"/>
+              <errorlog remove="remove"/>
+          </logger>
+          <query_log remove="remove"/>
+          <query_thread_log remove="remove"/>
+          <query_views_log remove="remove"/>
+          <query_metric_log remove="remove"/>
+          <part_log remove="remove"/>
+          <trace_log remove="remove"/>
+          <metric_log remove="remove"/>
+          <asynchronous_metric_log remove="remove"/>
+          <latency_log remove="remove"/>
+          <error_log remove="remove"/>
+          <text_log remove="remove"/>
+          <session_log remove="remove"/>
+          <opentelemetry_span_log remove="remove"/>
+          <processors_profile_log remove="remove"/>
+          <asynchronous_insert_log remove="remove"/>
+          <backup_log remove="remove"/>
+          <blob_storage_log remove="remove"/>
+          <s3queue_log remove="remove"/>
+          <crash_log remove="remove"/>
+          <background_schedule_pool_log remove="remove"/>
+          <user_query_log remove="remove"/>
+          <listen_host>0.0.0.0</listen_host>
+          <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+          <mark_cache_size>134217728</mark_cache_size>
+          <index_mark_cache_size>67108864</index_mark_cache_size>
+          <uncompressed_cache_size>67108864</uncompressed_cache_size>
+          <concurrent_threads_soft_limit_num>4</concurrent_threads_soft_limit_num>
+      </clickhouse>
+  clickhouse-users:
+    content: |
+      <clickhouse>
+          <profiles>
+              <default>
+                  <log_queries>0</log_queries>
+                  <max_threads>4</max_threads>
+                  <max_memory_usage>1000000000</max_memory_usage>
+              </default>
+          </profiles>
+      </clickhouse>
