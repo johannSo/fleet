@@ -65,7 +65,7 @@ The panel closes the connection with code 4001 when the machine's token is repla
 ## Agent (`agent/`, Go)
 
 - A single static binary, `fleet-agent`, for amd64 and arm64. `agent/build.sh` builds both into `agent/bin/` with `CGO_ENABLED=0`; `deploy.sh` runs it on the deploying machine when the agent's sources changed. Dependencies: `github.com/coder/websocket` and `github.com/BurntSushi/toml`.
-- The **build id** is a hash of the agent's sources (Go files, collectors, `go.mod`/`go.sum`, not tests), written to `bin/BUILD`. The same sources always give the same id, so agents only update when the agent actually changed. The version (`0.1.0`) is set in `main.go`.
+- The **build id** is a hash of the agent's sources (Go files, collectors, `go.mod`/`go.sum`, not tests), written to `bin/BUILD`. The same sources always give the same id, so agents only update when the agent actually changed. The version (`0.2.0`) is set in `main.go`.
 - Commands: `run` (what the service runs), `install`, `uninstall`, `collect <kind>` (run one collector and print it, for debugging), `approve <sha256>`, `approved`, `unapprove <hash>` (see [Approving custom scripts](#approving-custom-scripts)), `version`.
 - Config in `~/.config/fleet-agent/` (0700, files 0600): `config.toml` (`id`, and `urls` in order, for example LAN `https://192.168.1.10:4443` then Tailscale `https://100.64.0.10:4443`), `token`, `ca.pem`. Always under `~/.config`, never `$XDG_CONFIG_HOME`, so the installer's shell and the service agree. `FLEET_AGENT_CONFIG` overrides the directory.
 - Trusts only the panel's CA (pinned), not the system store, and ignores proxy environment variables. The CA is already name-constrained to private ranges, including Tailscale's 100.64.0.0/10.
