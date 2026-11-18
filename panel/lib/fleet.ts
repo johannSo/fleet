@@ -13,6 +13,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parse as parseToml } from "smol-toml";
 import { hardwareSpecs, mergeAddresses, wolMac } from "./hardware";
+import { normalizeScript, scriptHash } from "./script-hash";
 import { knownHostnames, STATE_DIR } from "./net";
 import type { AddressEntry, FleetNode, FleetSpec, Hardware, MachineInput, NodeKind } from "./types";
 import { detectUpdateOs, UPDATE_OS_IDS, type UpdateOs } from "./update-os";
@@ -282,6 +283,7 @@ function toNode(r: Row, localNames: Set<string>, localHost: string, hostnameClai
     indexError: r.index_error,
     imported: hw ? [] : (imp?.specs ?? []),
     updateScript: r.update_script ?? "",
+    updateScriptHash: r.update_script ? scriptHash(r.update_script) : null,
     updateScriptWhen: r.update_script_when === "before" ? "before" : "after",
     updateOs: manualOs ?? detectedOs,
     updateOsManual: manualOs,
@@ -411,7 +413,7 @@ function normalize(input: MachineInput): Partial<Omit<Row, "id">> {
   }
   if ("updateScript" in input) {
     if (input.updateScript != null && typeof input.updateScript !== "string") throw new InventoryError("Update script must be text");
-    const script = (input.updateScript ?? "").replace(/\r\n?/g, "\n").replace(/^\s*\n|\s+$/g, "");
+    const script = normalizeScript(input.updateScript ?? "");
     if (script.length > 20_000) throw new InventoryError("Update script is too long (at most 20,000 characters)");
     out.update_script = script;
   }

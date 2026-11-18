@@ -53,7 +53,7 @@
   <img src="docs/readme/shot-node-light.webp" alt="Screenshot of a machine's page: model and OS, Open shell, Update, Run command and Reboot buttons, live CPU, memory and network charts, vitals and system details." width="100%" />
 </picture>
 
-<p align="center">Each machine's page has live charts, vitals and indexed hardware,<br />with a shell, updates, commands and reboot one click away.</p>
+<p align="center">Each machine's page has live charts, vitals and indexed hardware,<br />with updates, commands and reboot one click away.</p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shot-terminal-dark.webp" />
@@ -119,11 +119,12 @@
   </picture>
 </p>
 
-<p align="center">Anyone who can use the panel can run commands as you on every machine.<br />So it is built to stay home, and to keep powerful things visible.</p>
+<p align="center">Anyone who can use the panel can update and reboot every machine, but not run a command of their own.<br />It is built to stay home, and to keep powerful things visible.</p>
 
 - **Home network only.** It runs on an always-on machine on your LAN. For access away from home use Tailscale or `ssh -L`, never port-forwarding.
 - **Phones pair by QR code.** One-time codes, valid five minutes. Sessions last 180 days and can be revoked one by one.
 - **Its own certificate authority, name-constrained.** HTTPS for phones comes from a small CA limited to `localhost`, `.local`, the machine's hostname and private ranges, so even a leaked key can't impersonate a real website.
+- **No shell in the browser.** The panel runs built-in actions only. Your own scripts (update scripts, saved commands) run on a machine only after you approve them there, with a command you run on that machine.
 - **Nothing powerful happens silently.** Actions run in terminal tabs you can watch.
 - **The agent can't take orders.** `fleet-agent` listens on no port and runs only its four built-in read-only collectors. Every action stays on ssh.
 
@@ -151,7 +152,7 @@ flowchart LR
   proxy["AI proxy<br/>CLIProxyAPI :8317"]:::node
   ch[("ClickHouse<br/>request log")]:::node
   you -- ":4747 / :4443" --> panel
-  panel -- "ssh: probes, actions, shells" --> machines
+  panel -- "ssh: probes, actions" --> machines
   agent -. "wss: metrics" .-> panel
   machines --- agent
   panel --> proxy
@@ -235,7 +236,7 @@ curl -fsSLO https://raw.githubusercontent.com/johannSo/fleet/main/compose.yml
 curl -fsSL https://raw.githubusercontent.com/johannSo/fleet/main/.env.example -o .env
 # set CLICKHOUSE_PASSWORD in .env (e.g. openssl rand -hex 24), then:
 docker compose up -d
-docker compose logs fleet    # the first start prints the panel's password and the proxy's first API key
+docker compose logs fleet    # the first start prints the setup code for your account and the proxy's first API key
 ```
 
 | | |
@@ -247,7 +248,7 @@ docker compose logs fleet    # the first start prints the panel's password and t
 - **Network.** The panel uses the host's network (`network_mode: host`), so Wake-on-LAN, the addresses it gives fleet-agent and the proxy URLs it shows are the host's. ClickHouse listens on the host's loopback only.
 - **Machines, the Docker host included, are reached over ssh.** The container isn't a fleet machine (`FLEET_NO_LOCAL=1`), so add the host like any other machine. **Add machine** makes an ssh key in the data volume (`/data/.ssh`), or put your own there.
 - **State** lives in the `fleet-data` volume (`/data`: inventory, login, TLS CA, ssh keys, proxy accounts and config) and `clickhouse-data`.
-- **Settings** are in [`.env.example`](.env.example): `FLEET_PASSWORD`, `FLEET_AGENT_URLS`, ports, `FLEET_TAG` to pin a version.
+- **Settings** are in [`.env.example`](.env.example): `FLEET_USERNAME`/`FLEET_PASSWORD`, `FLEET_AGENT_URLS`, ports, `FLEET_TAG` to pin a version.
 - **Build it yourself** with `git submodule update --init && docker compose build` (the `build: .` in compose.yml).
 
 Images are built by [`.github/workflows/docker.yml`](.github/workflows/docker.yml). Every published [release](https://github.com/johannSo/fleet/releases) builds `latest`, `vX.Y.Z` and `X.Y`; every push to `main` builds `main` and `sha-<commit>`. The panel checks GitHub for new releases every few hours and shows **Fleet vX.Y.Z available** in the sidebar (and under **More** on phones) with the command to update. `FLEET_UPDATE_CHECK=0` turns the check off.
@@ -270,7 +271,7 @@ cd fleet/panel
 npm install
 npm run build
 npm run service:install    # http://localhost:4747, starts at login
-npm run service:logs       # the first start prints the password
+npm run service:logs       # the first start prints the setup code for your account
 ```
 
 Turn on linger (`sudo loginctl enable-linger $USER`) so it runs without anyone logged in. To develop on your own computer and deploy to that machine, use `./deploy.sh <ssh-alias>`: it builds there, keeps the live panel serving until the build succeeds, and only rebuilds the proxy when it changed. See [Running it on an always-on machine](panel/README.md#running-it-on-an-always-on-machine).

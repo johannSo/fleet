@@ -535,6 +535,7 @@ export function MachineDialog({ dialog, onClose }: { dialog: MachineDialogState;
           <div className="mb-1 text-[12px] font-medium text-fg-3">Update script</div>
           <p className="mb-2.5 text-[11.5px] leading-relaxed text-fg-4">
             Your own update steps, like pulling new container images. <span className="text-fg-3">Update</span> runs them in the same terminal tab as the system update, with bash. If one step fails, the next one is skipped. <span className="font-mono">$FLEET_UPDATE_AUTO</span> is 1 when prompts are auto-answered.
+            It only runs once the machine has approved it: after saving, the Update dialog shows the command to run on the machine. Every change needs approving again.
           </p>
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-fg-3">
             Run it

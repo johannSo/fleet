@@ -658,8 +658,8 @@ export function NodeCard({ node, index }: { node: FleetNode; index: number }) {
       )}
 
       <footer className="relative mt-3.5 flex items-center gap-1.5 border-line px-3.5 py-2.5 max-sm:gap-2 max-sm:px-4 max-sm:pt-1 max-sm:pb-4 sm:mt-4 sm:border-t">
-        <Button size="sm" variant="subtle" icon={TerminalSquare} className="relative z-10 max-sm:!h-11 max-sm:flex-1" disabled={!online} onClick={() => actions.shell(node.id)}>
-          Shell
+        <Button size="sm" variant="subtle" icon={TerminalSquare} className="relative z-10 max-sm:!h-11 max-sm:flex-1" disabled={!online} onClick={() => actions.run([node.id])}>
+          Run
         </Button>
         <Button size="sm" variant="ghost" icon={CloudDownload} className="relative z-10 max-sm:!h-11 max-sm:flex-1 max-sm:bg-hl/60" disabled={!online} onClick={() => actions.update(node.id)}>
           Update

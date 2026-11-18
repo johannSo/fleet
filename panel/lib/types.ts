@@ -144,6 +144,8 @@ export interface FleetNode {
   imported: FleetSpec[];
   /** The machine's own update steps (bash), run by the Update action next to the system updater; "" for none. */
   updateScript: string;
+  /** sha256 of the update script, which the machine has to approve before it runs (lib/approval.ts); null without one. */
+  updateScriptHash: string | null;
   /** Whether the update script runs before or after the system updater. */
   updateScriptWhen: UpdateScriptWhen;
   /** OS family the system update is run for: the one chosen in the panel, else the detected one; null when neither is known (the Update dialog then asks). */
@@ -245,6 +247,8 @@ export interface NodeMetrics {
   pkg: PkgManager;
   procs: number;
   users: number;
+  /** sha256 of every custom script approved on the machine (lib/approval.ts); null when its probe doesn't report them. */
+  approved: string[] | null;
 }
 
 export interface Sample {
@@ -313,16 +317,22 @@ export interface NodeDetails {
 
 /* ---------- terminal protocol ---------- */
 
+/**
+ * What a terminal tab can run: built-in actions only. There is deliberately no
+ * shell and no free-form command (lib/actions.ts).
+ */
 export type ActionKind =
-  | "shell"
   | "update"
   | "reboot"
   | "shutdown"
   | "unit"
   | "container"
-  | "exec"
   | "logs"
   | "kill"
+  /** A built-in command from lib/checks.ts (params.check). */
+  | "check"
+  /** A saved command (params.script), run only where the machine approved it (lib/approval.ts). */
+  | "script"
   /** Install, re-key or remove fleet-agent (params.op); runs on the panel's machine and reaches the machine over ssh. */
   | "agent";
 

@@ -31,7 +31,6 @@ import {
   ScrollText,
   Search,
   Skull,
-  Sparkles,
   Square,
   TerminalSquare,
   X,
@@ -171,10 +170,9 @@ function Hero({ node }: { node: FleetNode }) {
           </div>
         </div>
 
-        <div className="grid w-full grid-cols-4 gap-2 sm:hidden">
+        <div className="grid w-full grid-cols-3 gap-2 sm:hidden">
           {[
-            { label: "Shell", icon: TerminalSquare, onClick: () => actions.shell(node.id), primary: true },
-            { label: (upd?.count ?? 0) > 0 ? `Update · ${upd!.count}` : "Update", icon: CloudDownload, onClick: () => actions.update(node.id) },
+            { label: (upd?.count ?? 0) > 0 ? `Update · ${upd!.count}` : "Update", icon: CloudDownload, onClick: () => actions.update(node.id), primary: true },
             { label: "Run", icon: Play, onClick: () => actions.run([node.id]) },
           ].map((b) => (
             <button
@@ -208,10 +206,7 @@ function Hero({ node }: { node: FleetNode }) {
           />
         </div>
         <div className="grid w-full grid-cols-3 gap-2 max-sm:hidden sm:flex sm:w-auto sm:flex-wrap sm:items-center">
-          <Button variant="primary" icon={TerminalSquare} disabled={!online} onClick={() => actions.shell(node.id)} className="col-span-3 max-sm:h-11 max-sm:text-[15px]">
-            Open shell
-          </Button>
-          <Button variant="secondary" icon={CloudDownload} disabled={!online} onClick={() => actions.update(node.id)}>
+          <Button variant="primary" icon={CloudDownload} disabled={!online} onClick={() => actions.update(node.id)}>
             Update
             {(upd?.count ?? 0) > 0 && <span className="rounded-full bg-blue/15 px-1.5 text-[11px] font-semibold text-blue tabular">{upd!.count}</span>}
           </Button>
@@ -219,12 +214,6 @@ function Hero({ node }: { node: FleetNode }) {
             <span className="sm:hidden">Run</span>
             <span className="max-sm:hidden">Run command</span>
           </Button>
-          <Link
-            href={`/ai?node=${encodeURIComponent(node.id)}`}
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-magenta/25 bg-magenta/10 px-3.5 text-[13px] font-medium whitespace-nowrap text-magenta transition-colors hover:border-magenta/40 hover:bg-magenta/18"
-          >
-            <Sparkles size={15} /> Ask AI
-          </Link>
           <div className="flex">
             <Button
               variant="warning"
@@ -1230,7 +1219,7 @@ function ProcessesTab({ node }: { node: FleetNode }) {
             size="sm"
             variant="subtle"
             icon={TerminalSquare}
-            onClick={() => term.open({ node: node.id, action: "exec", params: { cmd: "htop || top", title: "htop" } })}
+            onClick={() => term.open({ node: node.id, action: "check", params: { check: "top" } })}
           >
             htop
           </Button>
@@ -1260,7 +1249,7 @@ function ProcessesTab({ node }: { node: FleetNode }) {
               />
             </div>
             <button
-              onClick={() => term.open({ node: node.id, action: "exec", params: { cmd: "htop || top", title: "htop" } })}
+              onClick={() => term.open({ node: node.id, action: "check", params: { check: "top" } })}
               className="flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-hl/70 px-3.5 text-[14px] font-medium text-fg-2 active:bg-line-3"
             >
               <Gauge size={16} /> htop

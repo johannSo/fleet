@@ -1,6 +1,6 @@
 /* Shared between the activity log on the server (lib/audit.ts) and the Activity page. */
 
-/** terminal: shells and actions in the terminal dock; ai: the AI chat; panel: buttons like Wake; auth: sign-ins and devices; proxy: the AI proxy's accounts, keys and settings. */
+/** terminal: actions in the terminal dock; ai: the AI chat (removed; kept for old entries); panel: buttons like Wake; auth: sign-ins and devices; proxy: the AI proxy's accounts, keys and settings. */
 export type ActivitySource = "terminal" | "ai" | "panel" | "auth" | "proxy";
 
 /** ok/error: finished. denied: the user declined it. approval: waiting for the user. */

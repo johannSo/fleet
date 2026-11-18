@@ -17,9 +17,10 @@ import {
   Puzzle,
   Search,
   Server,
+  ShieldAlert,
   Smartphone,
-  Sparkles,
   SquareTerminal,
+  UserRound,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -210,6 +211,7 @@ function Sidebar() {
   const fleet = useFleet();
   const term = useTerminals();
   const actions = useActions();
+  const me = useMe();
   const running = term.sessions.filter((s) => !s.exited).length;
   const local = fleet.nodes.find((n) => n.local);
 
@@ -278,6 +280,17 @@ function Sidebar() {
 
       <div className="space-y-2 border-t border-line px-3 py-3">
         <VersionIndicator />
+        {me && !me.account && (
+          <Link
+            href="/login"
+            className="flex w-full items-start gap-2.5 rounded-md border border-yellow/25 bg-yellow/[0.07] px-2 py-2 text-[12px] leading-snug text-fg-2 hover:border-yellow/45"
+          >
+            <ShieldAlert size={14} className="mt-px shrink-0 text-yellow" />
+            <span>
+              <span className="font-medium text-yellow">Create the login account</span> so other devices can sign in.
+            </span>
+          </Link>
+        )}
         <button
           onClick={actions.devices}
           className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-[12.5px] font-medium text-fg-3 transition-colors hover:bg-hover hover:text-fg"
@@ -285,6 +298,16 @@ function Sidebar() {
           <Smartphone size={14} className="text-cyan" />
           Add a device
         </button>
+        {me?.account && (
+          <button
+            onClick={actions.account}
+            className="flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-[12.5px] font-medium text-fg-3 transition-colors hover:bg-hover hover:text-fg"
+          >
+            <UserRound size={14} className="text-blue" />
+            <span className="truncate">Account</span>
+            {me.username && <span className="ml-auto truncate font-mono text-[11px] text-fg-4">{me.username}</span>}
+          </button>
+        )}
         <div className="flex items-center gap-2 px-2 text-[11px] text-fg-4">
           {term.connected ? <Wifi size={12} className="text-green" /> : <WifiOff size={12} className="text-red" />}
           <span className="truncate">
@@ -335,7 +358,6 @@ function Topbar() {
   const crumbs: { label: string; href?: string; mono?: boolean }[] = [{ label: "Fleet", href: "/" }];
   if (path.startsWith("/nodes/")) crumbs.push({ label: decodeURIComponent(path.split("/")[2] ?? ""), mono: true });
   else if (path === "/activity") crumbs.push({ label: "Activity" });
-  else if (path === "/ai") crumbs.push({ label: "AI chat" });
   else if (path === "/skill") crumbs.push({ label: "Claude skill" });
   else if (path === "/machines") crumbs.push({ label: "Machines" });
   else if (path.startsWith("/proxy")) {
@@ -412,7 +434,7 @@ function MobileTopbar() {
   const nodeId = path.startsWith("/nodes/") ? decodeURIComponent(path.split("/")[2] ?? "") : null;
   const title =
     nodeId ??
-    (path === "/activity" ? "Activity" : path === "/machines" ? "Machines" : path === "/ai" ? "AI chat" : path === "/skill" ? "Claude skill" : path.startsWith("/proxy") ? "AI proxy" : "Fleet");
+    (path === "/activity" ? "Activity" : path === "/machines" ? "Machines" : path === "/skill" ? "Claude skill" : path.startsWith("/proxy") ? "AI proxy" : "Fleet");
 
   return (
     <header className="flex shrink-0 items-end border-b border-line bg-bg/85 pt-[env(safe-area-inset-top)] backdrop-blur-md md:hidden">
@@ -472,7 +494,7 @@ function BottomNav() {
         <span className="absolute -top-1 -right-2 min-w-4 rounded-full bg-green px-1 text-center text-[9.5px] leading-4 font-bold text-[#11131c] tabular">{running}</span>
       ) : null,
     },
-    { key: "ai", label: "AI", icon: Sparkles, href: "/ai", active: path === "/ai" && !termOpen && !sheet },
+    { key: "activity", label: "Activity", icon: Activity, href: "/activity", active: path === "/activity" && !termOpen && !sheet },
     {
       key: "more",
       label: "More",
@@ -559,10 +581,10 @@ export function MachinesView() {
   );
 }
 
-function SheetItem({ icon: Icon, label, hint, onClick, tone }: { icon: typeof Search; label: string; hint?: string; onClick: () => void; tone?: "red" | "green" }) {
+function SheetItem({ icon: Icon, label, hint, onClick, tone }: { icon: typeof Search; label: string; hint?: string; onClick: () => void; tone?: "red" | "green" | "yellow" }) {
   return (
     <button onClick={onClick} className="flex min-h-14 w-full cursor-pointer items-center gap-3.5 rounded-xl px-3 py-2.5 text-left active:bg-hl">
-      <span className={clsx("grid size-9 place-items-center rounded-lg", tone === "red" ? "bg-red/10 text-red" : tone === "green" ? "bg-green/10 text-green" : "bg-hl/70 text-fg-2")}>
+      <span className={clsx("grid size-9 place-items-center rounded-lg", tone === "red" ? "bg-red/10 text-red" : tone === "green" ? "bg-green/10 text-green" : tone === "yellow" ? "bg-yellow/10 text-yellow" : "bg-hl/70 text-fg-2")}>
         <Icon size={18} />
       </span>
       <span className="min-w-0 flex-1">
@@ -605,7 +627,9 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
         <SheetItem icon={Puzzle} label="Claude skill" hint="Teach Claude Code your machines" onClick={go(() => router.push("/skill"))} />
         <SheetItem icon={Play} label="Run command" hint="On one or several machines" onClick={go(() => actions.run())} />
         <SheetItem icon={CloudDownload} label="Update machines" hint={pending ? `${pending} pending` : "Everything current"} onClick={go(() => actions.update([]))} />
-        <SheetItem icon={Smartphone} label="Add a device" hint="Pairing code, signed-in devices, password" onClick={go(actions.devices)} />
+        {me && !me.account && <SheetItem icon={ShieldAlert} label="Create the login account" hint="So other devices can sign in" onClick={go(() => router.push("/login"))} tone="yellow" />}
+        <SheetItem icon={Smartphone} label="Add a device" hint="Pairing code, signed-in devices" onClick={go(actions.devices)} />
+        {me?.account && <SheetItem icon={UserRound} label="Account" hint={`${me.username ?? ""} · password, two-factor`} onClick={go(actions.account)} />}
         {install.canInstall && <SheetItem icon={Download} label="Install app" hint="Add Fleet to your home screen" onClick={go(install.prompt)} />}
         {install.iosHint && (
           <div className="mx-3 my-2 rounded-xl border border-line-2 bg-void/40 px-3.5 py-3 text-[13px] leading-relaxed text-fg-3">

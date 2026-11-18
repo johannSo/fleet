@@ -9,15 +9,20 @@ import QRCode from "qrcode";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildLaunch } from "./lib/actions";
 import { handleAgentApi, handleAgentPublic, handleAgentUpgrade } from "./lib/agent-server";
-import { AI_MODEL, answerApproval, createChat, deleteChat, getChat, listChats, sendMessage, setBroadcast, stopChat, updateChat } from "./lib/agent";
-import type { AiClientMsg, AiServerMsg } from "./lib/ai-types";
 import {
+  accountInfo,
+  changePassword,
+  checkLogin,
   checkPassword,
+  checkSetupCode,
+  checkTotp,
   clearCookie,
   clientIp,
   consumePairCode,
   createSession as createAuthSession,
+  createAccount,
   destroySession,
+  hasAccount,
   initAuth,
   isAuthed,
   isLocalRequest,
@@ -26,13 +31,18 @@ import {
   loginLocked,
   loginSucceeded,
   newPairCode,
+  passwordProblem,
   readCookie,
-  resetPassword,
   revokeDevice,
   sessionCookie,
   sessionFor,
+  setTotp,
+  totpEnabled,
+  USERNAME_RE,
 } from "./lib/auth";
+import { newTotpSecret, totpUri, verifyTotp } from "./lib/totp";
 import { getNode, loadFleet, onFleetChange } from "./lib/fleet";
+import { handleScripts } from "./lib/scripts";
 import { handleInventory, handleSkillInstall, tokenAllows } from "./lib/inventory-api";
 import { hostName, knownHostnames, lanAddresses } from "./lib/net";
 import { CA_CERT, ensureCerts } from "./lib/tls";
@@ -216,7 +226,7 @@ function createSession(ws: WebSocket, msg: Extract<ClientMsg, { t: "create" }>) 
     kind: `terminal.${msg.spec.action}`,
     actor,
     node: node.id,
-    summary: msg.spec.action === "shell" ? "Opened a shell" : launch.title,
+    summary: launch.title,
     detail: launch.command,
     status: "running",
     ref: info.id,
@@ -305,53 +315,6 @@ function handle(ws: WebSocket, msg: ClientMsg) {
   }
 }
 
-/* ---------------- AI chat ---------------- */
-
-const aiSockets = new Set<WebSocket>();
-
-function aiSend(ws: WebSocket, msg: AiServerMsg) {
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
-}
-
-setBroadcast((msg) => {
-  const data = JSON.stringify(msg);
-  for (const ws of aiSockets) if (ws.readyState === ws.OPEN) ws.send(data);
-});
-
-function handleAi(ws: WebSocket, msg: AiClientMsg) {
-  try {
-    switch (msg.t) {
-      case "list":
-        return aiSend(ws, { t: "chats", list: listChats() });
-      case "open": {
-        const chat = getChat(String(msg.chat));
-        if (chat) aiSend(ws, { t: "chat", chat });
-        else aiSend(ws, { t: "error", message: "That chat doesn't exist any more" });
-        return;
-      }
-      case "new": {
-        const id = createChat(String(msg.node), msg.mode, String(msg.text ?? ""), actorFor(ws));
-        aiSend(ws, { t: "created", nonce: String(msg.nonce), chat: id });
-        const chat = getChat(id);
-        if (chat) aiSend(ws, { t: "chat", chat });
-        return;
-      }
-      case "send":
-        return sendMessage(String(msg.chat), String(msg.text ?? ""), actorFor(ws));
-      case "approve":
-        return answerApproval(String(msg.chat), String(msg.tool), msg.allow === true, typeof msg.note === "string" ? msg.note : undefined, msg.always === true, actorFor(ws));
-      case "stop":
-        return stopChat(String(msg.chat), actorFor(ws));
-      case "update":
-        return updateChat(String(msg.chat), { mode: msg.mode, node: typeof msg.node === "string" ? msg.node : undefined }, actorFor(ws));
-      case "delete":
-        return deleteChat(String(msg.chat), actorFor(ws));
-    }
-  } catch (err) {
-    aiSend(ws, { t: "error", message: (err as Error).message });
-  }
-}
-
 /* ---------------- auth endpoints ---------------- */
 
 const PUBLIC_PREFIXES = ["/_next/", "/icons/", "/login", "/manifest.webmanifest", "/sw.js", "/offline.html", "/icon.svg", "/apple-icon.png", "/favicon.ico"];
@@ -375,6 +338,21 @@ function readBody(req: IncomingMessage, limit = 8192): Promise<string> {
     req.on("error", reject);
   });
 }
+
+/** The request's JSON object, or null. */
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+  try {
+    const v = JSON.parse((await readBody(req)) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** Two-factor secrets shown to a device but not yet confirmed with a code, by session token. */
+const pendingTotp = new Map<string, { secret: string; expires: number }>();
 
 let tlsEnabled = false;
 
@@ -417,20 +395,52 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, pathname: s
 
   if (!pathname.startsWith("/api/auth/")) return false;
 
-  if (pathname === "/api/auth/login" && method === "POST") {
+  if (pathname === "/api/auth/setup" && method === "POST") {
     const ip = clientIp(req);
+    if (hasAccount()) return json(res, 409, { error: "The account already exists. Sign in instead." }), true;
     const wait = loginLocked(ip);
     if (wait) return json(res, 429, { error: `Too many attempts — try again in ${wait}s`, retryAfter: wait }), true;
-    let password = "";
-    try {
-      password = String(JSON.parse(await readBody(req)).password ?? "");
-    } catch {
-      return json(res, 400, { error: "Bad request" }), true;
-    }
-    if (!checkPassword(password.trim())) {
+    const b = await readJsonBody(req);
+    if (!b) return json(res, 400, { error: "Bad request" }), true;
+    // While there's no account, whoever reaches the panel first could claim it; so only this
+    // machine, an already signed-in device, or someone with the printed setup code may.
+    if (!isAuthed(req) && !checkSetupCode(str(b.setupCode))) {
       loginFailed(ip);
-      logActivity({ source: "auth", kind: "auth.login", actor: ip, summary: "Sign-in failed: wrong password", status: "error" });
-      return json(res, 401, { error: "Wrong password" }), true;
+      logActivity({ source: "auth", kind: "auth.setup", actor: ip, summary: "Account setup refused: wrong setup code", status: "error" });
+      return json(res, 403, { error: "That setup code isn't right. It's printed where the panel started (its terminal or `docker compose logs fleet`)." }), true;
+    }
+    const username = str(b.username).trim();
+    const password = str(b.password);
+    if (!USERNAME_RE.test(username)) return json(res, 400, { error: "Username: letters, digits, dot, dash or underscore, at most 32" }), true;
+    const problem = passwordProblem(password);
+    if (problem) return json(res, 400, { error: problem }), true;
+    createAccount(username, password);
+    loginSucceeded(ip);
+    logActivity({ source: "auth", kind: "auth.setup", actor: actorOf(req), summary: `Created the panel account “${username}”`, status: "ok" });
+    if (isLocalRequest(req) || sessionFor(req)) return json(res, 200, { ok: true }), true;
+    return json(res, 200, { ok: true }, { "set-cookie": sessionCookie(createAuthSession(req), secure) }), true;
+  }
+
+  if (pathname === "/api/auth/login" && method === "POST") {
+    const ip = clientIp(req);
+    if (!hasAccount()) return json(res, 409, { error: "There's no account yet. Create it first.", setup: true }), true;
+    const wait = loginLocked(ip);
+    if (wait) return json(res, 429, { error: `Too many attempts — try again in ${wait}s`, retryAfter: wait }), true;
+    const b = await readJsonBody(req);
+    if (!b) return json(res, 400, { error: "Bad request" }), true;
+    if (!checkLogin(str(b.username), str(b.password))) {
+      loginFailed(ip);
+      logActivity({ source: "auth", kind: "auth.login", actor: ip, summary: "Sign-in failed: wrong username or password", status: "error" });
+      return json(res, 401, { error: "Wrong username or password" }), true;
+    }
+    if (totpEnabled()) {
+      const code = str(b.code);
+      if (!code) return json(res, 401, { error: "Enter the 6-digit code from your authenticator app", needCode: true }), true;
+      if (!checkTotp(code)) {
+        loginFailed(ip);
+        logActivity({ source: "auth", kind: "auth.login", actor: ip, summary: "Sign-in failed: wrong two-factor code", status: "error" });
+        return json(res, 401, { error: "That code isn't right, or was already used. Wait for the next one.", needCode: true }), true;
+      }
     }
     loginSucceeded(ip);
     const token = createAuthSession(req);
@@ -445,6 +455,9 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, pathname: s
         authed: isAuthed(req),
         local: isLocalRequest(req),
         device,
+        account: hasAccount(),
+        username: isAuthed(req) ? (accountInfo()?.username ?? null) : null,
+        totp: isAuthed(req) ? totpEnabled() : null,
         hostname: hostName(),
         tls: tlsEnabled ? { port: tlsPort } : null,
         port,
@@ -497,9 +510,66 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, pathname: s
     return json(res, 200, { ok: true }), true;
   }
 
+  /* Changing how you sign in needs the current password (not on this machine itself, which never signs in). */
+  const stepUp = async (): Promise<{ b: Record<string, unknown> } | { error: number; msg: string }> => {
+    const ip = clientIp(req);
+    const wait = loginLocked(ip);
+    if (wait) return { error: 429, msg: `Too many attempts — try again in ${wait}s` };
+    const b = await readJsonBody(req);
+    if (!b) return { error: 400, msg: "Bad request" };
+    if (!hasAccount()) return { error: 409, msg: "Create the account first" };
+    if (!isLocalRequest(req) && !checkPassword(str(b.password))) {
+      loginFailed(ip);
+      return { error: 403, msg: "That isn't the current password" };
+    }
+    return { b };
+  };
+  const pendingKey = readCookie(req) ?? "local";
+
   if (pathname === "/api/auth/password" && method === "POST") {
-    logActivity({ source: "auth", kind: "auth.password", actor: actorOf(req), summary: "Reset the panel password", status: "ok" });
-    return json(res, 200, { password: resetPassword() }), true;
+    const r = await stepUp();
+    if ("error" in r) return json(res, r.error, { error: r.msg }), true;
+    const next = str(r.b.next);
+    const problem = passwordProblem(next);
+    if (problem) return json(res, 400, { error: problem }), true;
+    changePassword(next, readCookie(req));
+    logActivity({ source: "auth", kind: "auth.password", actor: actorOf(req), summary: "Changed the panel password (other devices were signed out)", status: "ok" });
+    return json(res, 200, { ok: true }), true;
+  }
+
+  if (pathname === "/api/auth/totp/start" && method === "POST") {
+    if (!hasAccount()) return json(res, 409, { error: "Create the account first" }), true;
+    const secret = newTotpSecret();
+    for (const [k, p] of pendingTotp) if (p.expires < Date.now()) pendingTotp.delete(k);
+    pendingTotp.set(pendingKey, { secret, expires: Date.now() + 10 * 60_000 });
+    const uri = totpUri(secret, accountInfo()!.username, `Fleet (${hostName()})`);
+    return json(res, 200, { secret, uri, qr: await qr(uri) }), true;
+  }
+
+  if (pathname === "/api/auth/totp/enable" && method === "POST") {
+    const r = await stepUp();
+    if ("error" in r) return json(res, r.error, { error: r.msg }), true;
+    const pending = pendingTotp.get(pendingKey);
+    if (!pending || pending.expires < Date.now()) return json(res, 410, { error: "That setup expired. Start again." }), true;
+    const step = verifyTotp(pending.secret, str(r.b.code));
+    if (step === null) return json(res, 400, { error: "That code isn't right. Check the app shows Fleet and try the newest code." }), true;
+    pendingTotp.delete(pendingKey);
+    setTotp(pending.secret, step);
+    logActivity({ source: "auth", kind: "auth.totp", actor: actorOf(req), summary: "Turned on two-factor sign-in", status: "ok" });
+    return json(res, 200, { ok: true }), true;
+  }
+
+  if (pathname === "/api/auth/totp/disable" && method === "POST") {
+    const r = await stepUp();
+    if ("error" in r) return json(res, r.error, { error: r.msg }), true;
+    if (!totpEnabled()) return json(res, 200, { ok: true }), true;
+    if (!isLocalRequest(req) && !checkTotp(str(r.b.code))) {
+      loginFailed(clientIp(req));
+      return json(res, 403, { error: "That code isn't right, or was already used" }), true;
+    }
+    setTotp(null);
+    logActivity({ source: "auth", kind: "auth.totp", actor: actorOf(req), summary: "Turned off two-factor sign-in", status: "ok" });
+    return json(res, 200, { ok: true }), true;
   }
 
   return json(res, 404, { error: "Not found" }), true;
@@ -793,7 +863,7 @@ function watchPanelAction(req: IncomingMessage, res: ServerResponse, url: URL) {
 
 /* ---------------- http ---------------- */
 
-const { createdPassword } = initAuth();
+const { setupCode } = initAuth();
 const app = next({ dev, hostname: "localhost", port });
 const nextHandle = app.getRequestHandler();
 
@@ -835,7 +905,7 @@ app.prepare().then(() => {
 
     const authed = isAuthed(req) || viaToken;
     const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p.endsWith("/") ? p : `${p}/`) || pathname.startsWith(`${p}?`));
-    if (pathname === "/login" && authed) {
+    if (pathname === "/login" && authed && hasAccount()) {
       res.writeHead(302, { location: "/" });
       res.end();
       return;
@@ -853,6 +923,7 @@ app.prepare().then(() => {
     if (await handleInventory(req, res, url, { actor, port, viaToken })) return;
     if (viaToken) return json(res, 401, { error: "Sign in first" });
     if (handleAgentApi(req, res, url, actor)) return;
+    if (await handleScripts(req, res, url, actor)) return;
     if (await handleProxy(req, res, url)) return;
     if (pathname === "/api/version" && req.method === "GET") return json(res, 200, await versionInfo());
     try {
@@ -909,24 +980,6 @@ app.prepare().then(() => {
     });
   });
 
-  const aiWss = new WebSocketServer({ noServer: true, maxPayload: 4 << 20 });
-  aiWss.on("connection", (ws, req: IncomingMessage) => {
-    actors.set(ws, actorOf(req));
-    aiSockets.add(ws);
-    aiSend(ws, { t: "hello", model: AI_MODEL, ready: true, error: null });
-    aiSend(ws, { t: "chats", list: listChats() });
-    ws.on("message", (raw) => {
-      let msg: AiClientMsg;
-      try {
-        msg = JSON.parse(String(raw));
-      } catch {
-        return;
-      }
-      handleAi(ws, msg);
-    });
-    ws.on("close", () => aiSockets.delete(ws));
-  });
-
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const { pathname } = new URL(req.url ?? "/", "http://x");
     // fleet-agent: authenticated by its machine token, not a session (lib/agent-server.ts).
@@ -939,14 +992,13 @@ app.prepare().then(() => {
       handleAgentUpgrade(req, socket, head);
       return;
     }
-    if (pathname === "/ws" || pathname === "/ws/ai") {
+    if (pathname === "/ws") {
       if (!trusted(req) || !isAuthed(req)) {
         socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
         socket.destroy();
         return;
       }
-      const target = pathname === "/ws" ? wss : aiWss;
-      target.handleUpgrade(req, socket, head, (ws) => target.emit("connection", ws, req));
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
       return;
     }
     // Let Next handle its own HMR socket in dev.
@@ -979,7 +1031,14 @@ app.prepare().then(() => {
           ...lan.map((a) => `    LAN            http://${a}:${port}${certs ? `   ·   https://${a}:${tlsPort}` : ""}`),
           `    mDNS           http://${hostName()}.local:${port}${certs ? `   ·   https://${hostName()}.local:${tlsPort}` : ""}`,
         ]),
-    ...(createdPassword ? ["", `    password       ${createdPassword}   (shown once — change it from the panel's "Devices" dialog)`] : []),
+    ...(setupCode
+      ? [
+          "",
+          "    No account yet. Create it in the panel: on this machine at",
+          `    http://localhost:${port}/login, or from another device with this setup code:`,
+          `    setup code     ${setupCode}`,
+        ]
+      : []),
     "",
   ];
   console.log(lines.join("\n"));

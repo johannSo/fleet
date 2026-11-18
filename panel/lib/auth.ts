@@ -1,14 +1,20 @@
-import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { STATE_DIR, isLoopback } from "./net";
+import { verifyTotp } from "./totp";
 
 /**
  * Who may use the panel:
  * - requests from this machine to localhost need nothing (you're already here);
- * - everyone else needs a session cookie, obtained with the password or by
- *   scanning a one-time pairing QR code shown in an already signed-in panel.
+ * - everyone else needs a session cookie, obtained by signing in to the panel's
+ *   one account (username, password and, if turned on, an authenticator code)
+ *   or by scanning a one-time pairing QR code shown in an already signed-in panel.
+ *
+ * The account is created on first start, in the panel itself. Until it exists,
+ * only this machine, an already signed-in device, or someone with the setup code
+ * the panel prints when it starts can create it.
  */
 
 const AUTH_FILE = path.join(STATE_DIR, "auth.json");
@@ -24,68 +30,149 @@ export interface Device {
   mobile?: boolean;
 }
 
-interface AuthState {
+interface Account {
+  username: string;
   passwordHash: string;
   passwordSalt: string;
+  /** Authenticator-app secret (base32) and the last step a code was accepted for. */
+  totp: { secret: string; usedStep: number } | null;
+  createdAt: number;
+}
+
+interface AuthState {
+  account: Account | null;
   sessions: Record<string, Device>; // keyed by sha256(token)
 }
 
-let state: AuthState | null = null;
+let state: AuthState = { account: null, sessions: {} };
 let dirty = false;
+/** Needed to create the account from another device while there is none; printed at startup. */
+let setupCode: string | null = null;
 
-const WORDS =
-  "amber anchor aurora basalt beacon birch cedar cinder cobalt comet coral crater dune ember fern fjord flint frost glade granite harbor hazel indigo iris juniper kelp lagoon lantern lichen lunar maple marble meadow mist nebula nova oak obsidian onyx orbit pebble pine prism quartz raven reef ridge river saffron sage sequoia shale sierra slate spruce storm summit tide topaz tundra umber valley violet willow zephyr".split(
-    " ",
-  );
+export const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}$/;
+export const MIN_PASSWORD = 10;
 
 function hashPassword(pw: string, salt: string) {
   return scryptSync(pw, salt, 32).toString("hex");
 }
 
 function save() {
-  if (!state) return;
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(AUTH_FILE, JSON.stringify(state, null, 2));
+  writeFileSync(AUTH_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
   chmodSync(AUTH_FILE, 0o600);
   dirty = false;
 }
 setInterval(() => dirty && save(), 30_000).unref();
 
-/** A memorable random passphrase, e.g. "cobalt-fjord-ember-42". */
-function newPassphrase() {
-  const pick = () => WORDS[randomInt(WORDS.length)];
-  return `${pick()}-${pick()}-${pick()}-${randomInt(10, 100)}`;
+function makeAccount(username: string, password: string, totp: Account["totp"] = null): Account {
+  const salt = randomBytes(16).toString("hex");
+  return { username, passwordHash: hashPassword(password, salt), passwordSalt: salt, totp, createdAt: Date.now() };
 }
 
-/** Loads auth state; on first run creates a password and returns it so it can be shown once. */
-export function initAuth(): { createdPassword: string | null } {
+/**
+ * Loads auth state. Without an account it makes a setup code and returns it, so
+ * the server can print it. FLEET_PASSWORD (and FLEET_USERNAME, default "admin")
+ * creates the account, or resets its password, on every start.
+ */
+export function initAuth(): { setupCode: string | null } {
+  let loaded: Partial<AuthState> & { passwordHash?: string } = {};
   try {
-    state = JSON.parse(readFileSync(AUTH_FILE, "utf8"));
+    loaded = JSON.parse(readFileSync(AUTH_FILE, "utf8"));
   } catch {
-    state = null;
+    /* first start */
   }
+  // Before accounts there was only a password; its devices stay signed in and the account gets made in the panel.
+  state = { account: loaded.account ?? null, sessions: loaded.sessions ?? {} };
   const envPw = process.env.FLEET_PASSWORD;
-  if (state && !envPw) return { createdPassword: null };
-  const pw = envPw || newPassphrase();
-  const salt = randomBytes(16).toString("hex");
-  state = { passwordHash: hashPassword(pw, salt), passwordSalt: salt, sessions: state?.sessions ?? {} };
-  save();
-  return { createdPassword: envPw ? null : pw };
+  if (envPw) {
+    const username = (process.env.FLEET_USERNAME || state.account?.username || "admin").trim();
+    if (!USERNAME_RE.test(username)) throw new Error("FLEET_USERNAME: use letters, digits, dot, dash or underscore (at most 32)");
+    state.account = makeAccount(username, envPw, state.account?.totp ?? null);
+  }
+  if (envPw || "passwordHash" in loaded) save();
+  setupCode = state.account ? null : randomBytes(12).toString("base64url");
+  return { setupCode };
 }
 
-export function resetPassword(): string {
-  const pw = newPassphrase();
-  const salt = randomBytes(16).toString("hex");
-  state = { passwordHash: hashPassword(pw, salt), passwordSalt: salt, sessions: state?.sessions ?? {} };
-  save();
-  return pw;
+export function hasAccount(): boolean {
+  return state.account !== null;
 }
 
-export function checkPassword(pw: string): boolean {
-  if (!state) return false;
-  const a = Buffer.from(hashPassword(pw, state.passwordSalt), "hex");
-  const b = Buffer.from(state.passwordHash, "hex");
+export function accountInfo(): { username: string; totp: boolean; createdAt: number } | null {
+  const a = state.account;
+  return a ? { username: a.username, totp: !!a.totp, createdAt: a.createdAt } : null;
+}
+
+export function checkSetupCode(code: string): boolean {
+  if (!setupCode || !code) return false;
+  const a = Buffer.from(code.trim());
+  const b = Buffer.from(setupCode);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Why a password won't do, or null. */
+export function passwordProblem(pw: string): string | null {
+  if (pw.length < MIN_PASSWORD) return `Use at least ${MIN_PASSWORD} characters`;
+  if (pw.length > 256) return "That password is too long (at most 256 characters)";
+  return null;
+}
+
+export function createAccount(username: string, password: string) {
+  if (state.account) throw new Error("There already is an account");
+  state.account = makeAccount(username, password);
+  setupCode = null;
+  save();
+}
+
+function samePassword(a: Account, pw: string): boolean {
+  const x = Buffer.from(hashPassword(pw, a.passwordSalt), "hex");
+  const y = Buffer.from(a.passwordHash, "hex");
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** The account's password. */
+export function checkPassword(pw: string): boolean {
+  return !!state.account && samePassword(state.account, pw);
+}
+
+/** Username and password; the password is hashed even for a wrong username, so timing doesn't tell. */
+export function checkLogin(username: string, pw: string): boolean {
+  const a = state.account;
+  if (!a) return false;
+  const okPw = samePassword(a, pw);
+  return okPw && username.trim().toLowerCase() === a.username.toLowerCase();
+}
+
+export function totpEnabled(): boolean {
+  return !!state.account?.totp;
+}
+
+/** Checks an authenticator code for the account; each code works once. */
+export function checkTotp(code: string): boolean {
+  const t = state.account?.totp;
+  if (!t) return false;
+  const step = verifyTotp(t.secret, code, t.usedStep);
+  if (step === null) return false;
+  t.usedStep = step;
+  save();
+  return true;
+}
+
+/** Turns two-factor on with this secret (already confirmed with a code from that step), or off with null. */
+export function setTotp(secret: string | null, usedStep = -1) {
+  if (!state.account) throw new Error("No account");
+  state.account.totp = secret ? { secret, usedStep } : null;
+  save();
+}
+
+/** Sets a new password and signs out every device but the one with keepToken. */
+export function changePassword(next: string, keepToken: string | null) {
+  const a = state.account;
+  if (!a) throw new Error("No account");
+  state.account = { ...makeAccount(a.username, next, a.totp), createdAt: a.createdAt };
+  const keep = keepToken ? sha(keepToken) : null;
+  for (const k of Object.keys(state.sessions)) if (k !== keep) delete state.sessions[k];
+  save();
 }
 
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
@@ -111,7 +198,7 @@ function deviceName(ua: string): string {
 export function createSession(req: IncomingMessage): string {
   const token = randomBytes(32).toString("base64url");
   const id = sha(token);
-  state!.sessions[id] = {
+  state.sessions[id] = {
     id: id.slice(0, 12),
     name: deviceName(String(req.headers["user-agent"] ?? "")),
     createdAt: Date.now(),
@@ -124,18 +211,17 @@ export function createSession(req: IncomingMessage): string {
 }
 
 export function destroySession(token: string) {
-  if (state && delete state.sessions[sha(token)]) save();
+  if (delete state.sessions[sha(token)]) save();
 }
 
 export function revokeDevice(shortId: string) {
-  if (!state) return;
   for (const [k, d] of Object.entries(state.sessions)) if (d.id === shortId) delete state.sessions[k];
   save();
 }
 
 export function listDevices(currentToken: string | null): (Device & { current: boolean })[] {
   const cur = currentToken ? sha(currentToken) : null;
-  return Object.entries(state?.sessions ?? {})
+  return Object.entries(state.sessions)
     .map(([k, d]) => ({ ...d, current: k === cur }))
     .sort((a, b) => b.lastSeen - a.lastSeen);
 }
@@ -161,7 +247,7 @@ export function isLocalRequest(req: IncomingMessage): boolean {
 
 export function sessionFor(req: IncomingMessage): Device | null {
   const token = readCookie(req);
-  if (!token || !state) return null;
+  if (!token) return null;
   const d = state.sessions[sha(token)];
   if (!d) return null;
   if (Date.now() - d.lastSeen > SESSION_DAYS * 86_400_000) {

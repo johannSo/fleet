@@ -23,9 +23,8 @@ import {
   Search,
   Server,
   Smartphone,
-  Sparkles,
   SquareTerminal,
-  TerminalSquare,
+  UserRound,
   Users,
   Waves,
 } from "lucide-react";
@@ -197,26 +196,7 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
                     ))}
                   </Command.Group>
 
-                  {online.length > 0 && (
-                    <Command.Group heading="Open shell">
-                      {online.map((n) => (
-                        <Item
-                          key={n.id}
-                          value={`shell ssh terminal ${n.id}`}
-                          icon={TerminalSquare}
-                          onSelect={() => run(() => actions.shell(n.id))}
-                          hint={<span className="font-mono pointer-coarse:hidden">{n.local ? "local" : n.sshCommand}</span>}
-                        >
-                          Shell on <span className={clsx("font-mono", ACCENT[fleet.accent(n.id)]?.text)}>{n.id}</span>
-                        </Item>
-                      ))}
-                    </Command.Group>
-                  )}
-
                   <Command.Group heading="Actions">
-                    <Item value="ask ai chat claude assistant agent" icon={Sparkles} onSelect={() => run(() => router.push("/ai"))}>
-                      Ask AI…
-                    </Item>
                     <Item value="run command fleet broadcast" icon={Play} onSelect={() => run(() => actions.run())}>
                       Run command…
                     </Item>
@@ -243,8 +223,11 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
                     <Item value="claude skill download install inventory" icon={Puzzle} onSelect={() => run(() => router.push("/skill"))}>
                       Claude skill
                     </Item>
-                    <Item value="add device phone pair qr login password" icon={Smartphone} onSelect={() => run(actions.devices)}>
+                    <Item value="add device phone pair qr" icon={Smartphone} onSelect={() => run(actions.devices)}>
                       Add a device…
+                    </Item>
+                    <Item value="account login password two-factor 2fa totp authenticator username" icon={UserRound} onSelect={() => run(actions.account)}>
+                      Account…
                     </Item>
                   </Command.Group>
 

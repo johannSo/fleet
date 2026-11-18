@@ -1,5 +1,5 @@
 // Phone-sized captures through the LAN address (so login is exercised).
-// usage: FLEET_PASSWORD=… node scripts/screenshot-mobile.mjs <outDir> <baseUrl>
+// usage: FLEET_USERNAME=… FLEET_PASSWORD=… node scripts/screenshot-mobile.mjs <outDir> <baseUrl> (an account without two-factor)
 import { chromium } from "playwright-core";
 import { mkdirSync } from "node:fs";
 
@@ -26,6 +26,7 @@ const shot = async (name, opts = {}) => {
 await page.goto(base, { waitUntil: "load" });
 await page.waitForTimeout(1500);
 await shot("01-login");
+await page.fill("#username", process.env.FLEET_USERNAME ?? "admin");
 await page.fill("#pw", process.env.FLEET_PASSWORD ?? "");
 await page.tap("button[type=submit]");
 await page.waitForURL((u) => !u.pathname.startsWith("/login"));

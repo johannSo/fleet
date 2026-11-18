@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { Check, ChevronDown, KeyRound, Laptop, LogOut, RefreshCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
+import { ChevronDown, KeyRound, Laptop, LogOut, RefreshCw, Smartphone, Trash2, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ago } from "@/lib/format";
@@ -55,12 +55,11 @@ function useCountdown(until: number | null) {
   return { left: s, label: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` };
 }
 
-export function DevicesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function DevicesDialog({ open, onClose, onAccount }: { open: boolean; onClose: () => void; onAccount: () => void }) {
   const [pair, setPair] = useState<Pair | null>(null);
   const [hostIdx, setHostIdx] = useState(1);
   const [secure, setSecure] = useState(true);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
-  const [newPw, setNewPw] = useState<string | null>(null);
   const [help, setHelp] = useState<"ios" | "android" | null>(null);
   const { copy, copied } = useCopy();
   const countdown = useCountdown(pair?.expiresAt ?? null);
@@ -76,10 +75,7 @@ export function DevicesDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(() => {
-      setNewPw(null);
-      refresh();
-    }, 0);
+    const t = setTimeout(refresh, 0);
     // keep the device list fresh so a phone appears the moment it pairs
     const i = setInterval(() => fetch("/api/auth/devices").then((r) => r.json()).then((d) => setDevices(d.devices)).catch(() => {}), 3000);
     return () => {
@@ -99,11 +95,6 @@ export function DevicesDialog({ open, onClose }: { open: boolean; onClose: () =>
     if (d.current) window.location.replace("/login");
     setDevices((list) => list.filter((x) => x.id !== d.id));
     toast(`Signed out ${d.name}`);
-  };
-
-  const reset = async () => {
-    const r = await fetch("/api/auth/password", { method: "POST" });
-    if (r.ok) setNewPw((await r.json()).password);
   };
 
   return (
@@ -260,24 +251,18 @@ export function DevicesDialog({ open, onClose }: { open: boolean; onClose: () =>
 
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line-2 bg-void/30 px-4 py-3">
             <KeyRound size={15} className="text-fg-4" />
-            {newPw ? (
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-[12.5px] text-fg-3">
-                New password:
-                <button onClick={() => copy(newPw)} className="cursor-pointer rounded-md bg-hl px-2 py-0.5 font-mono text-[13px] text-fg hover:bg-line-3">
-                  {newPw}
-                </button>
-                {copied === newPw ? <Check size={13} className="text-green" /> : <span className="text-[11px] text-fg-4">tap to copy · shown once</span>}
-              </div>
-            ) : (
-              <>
-                <span className="flex-1 text-[12.5px] text-fg-3">
-                  Or sign in with the password. Lost it? Make a new one; signed-in devices stay signed in.
-                </span>
-                <Button size="sm" variant="secondary" icon={ShieldCheck} onClick={reset}>
-                  New password
-                </Button>
-              </>
-            )}
+            <span className="flex-1 text-[12.5px] text-fg-3">Or sign in with the panel&apos;s username and password.</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={UserRound}
+              onClick={() => {
+                onClose();
+                setTimeout(onAccount, 180);
+              }}
+            >
+              Account &amp; two-factor
+            </Button>
           </div>
         </div>
       )}

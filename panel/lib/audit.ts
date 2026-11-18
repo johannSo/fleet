@@ -1,7 +1,7 @@
 /**
  * Activity log: a permanent record of everything done to machines through the
- * panel — terminal sessions and what was typed into them, the AI's commands and
- * who approved them, power actions, Wake-on-LAN and sign-ins.
+ * panel — terminal sessions and what was typed into them, saved commands,
+ * power actions, Wake-on-LAN and sign-ins.
  *
  * Stored in SQLite at $STATE_DIR/activity.db; terminal output goes to one
  * transcript file per session under $STATE_DIR/transcripts/.

@@ -3,7 +3,7 @@
 #
 #   cp .env.example .env     # set CLICKHOUSE_PASSWORD (and FLEET_PASSWORD if you like)
 #   docker compose up -d
-#   docker compose logs fleet   # the first start prints the panel's password and the proxy API key
+#   docker compose logs fleet   # the first start prints the setup code for the panel's account and the proxy API key
 #
 # Panel http://<host>:4747 · agents https://<host>:4443 · AI proxy http://<host>:8317/v1
 #
@@ -24,6 +24,7 @@ services:
       PORT: ${FLEET_PORT:-4747}
       TLS_PORT: ${FLEET_TLS_PORT:-4443}
       PROXY_PORT: ${PROXY_PORT:-8317}
+      FLEET_USERNAME: ${FLEET_USERNAME:-}
       FLEET_PASSWORD: ${FLEET_PASSWORD:-}
       FLEET_AGENT_URLS: ${FLEET_AGENT_URLS:-}
       FLEET_UPDATE_CHECK: ${FLEET_UPDATE_CHECK:-1}

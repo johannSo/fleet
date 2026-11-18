@@ -31,3 +31,7 @@ elif command -v pacman >/dev/null 2>&1; then echo pkg=pacman
 elif command -v apt-get >/dev/null 2>&1; then echo pkg=apt
 elif command -v dnf >/dev/null 2>&1; then echo pkg=dnf
 else echo pkg=unknown; fi
+# Custom scripts approved on this machine (sha256 per line), so the panel can say which still need approving.
+echo "approvals=1"
+f="$HOME/.config/fleet/approved-scripts"
+if [ -r "$f" ]; then awk '$1 ~ /^[0-9a-f]+$/ && length($1) == 64 { print "approved=" $1 }' "$f"; fi

@@ -199,7 +199,7 @@ export function SkillView() {
                   <div className="min-w-0 flex-1">
                     <div className="text-[13px] font-medium text-fg">Live access</div>
                     <p className="mt-1 text-[12px] leading-relaxed text-fg-4">
-                      Claude reads the current inventory from the panel and can add and edit machines. It uses a token that only opens the inventory, not terminals, the AI chat or the proxy. Off: the skill is a snapshot.
+                      Claude reads the current inventory from the panel and can add and edit machines. It uses a token that only opens the inventory, not terminals or the proxy. Off: the skill is a snapshot.
                     </p>
                   </div>
                   <Toggle on={live} onChange={setLive} label="Live access" />

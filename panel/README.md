@@ -7,9 +7,9 @@ A Next.js control panel for every machine in its inventory, in Tokyo Night. Run 
 - **Agents** (optional): `fleet-agent` on a machine pushes its metrics, pending updates and index to the panel, so the panel doesn't ssh in every few seconds. See [Agents](#agents).
 
 - **Overview**: live CPU, memory, disk, temperature, network and uptime for each machine, plus pending updates, reboot-required and failed-unit warnings. Unreachable machines get Retry, Wake-on-LAN and a copyable `ssh` command.
-- **Terminal dock**: real shells in the browser (xterm.js + a PTY on the server). Sessions keep running on the server, so reloading the page reattaches with scrollback. Toggle with <kbd>Ctrl</kbd>+<kbd>`</kbd>.
-- **Actions**: update, reboot and shut down machines; restart, stop and tail logs for systemd units and Docker containers; kill processes; run a command on several machines at once. Every action runs in a terminal tab, so you can watch it and answer prompts (for example a sudo password on the machine running the panel).
-- **AI chat**: ask Claude to do things on a machine ("why is this service failing?", "clean up disk space"). It runs commands and reads or writes files over ssh, and streams each command and its output into the chat. By default every command and file write waits for you to approve it (**Ask first**). **Auto** runs them without asking, and you can switch modes at any point in a chat.
+- **Terminal dock**: every action runs in a real terminal in the browser (xterm.js + a PTY on the server), so you can watch it and answer prompts. Sessions keep running on the server, so reloading the page reattaches with scrollback. Toggle with <kbd>Ctrl</kbd>+<kbd>`</kbd>. There is no shell: the panel never runs a command typed into it.
+- **Actions**: update, reboot and shut down machines; restart, stop and tail logs for systemd units and Docker containers; kill processes; run a built-in command (uptime, disk usage, failed units, htop…) or one of your saved commands on several machines at once.
+- **Custom scripts need approving on the machine**: a machine's update script and your saved commands only run on machines that approved them, by running a command there that the panel shows you. See [Custom scripts](#custom-scripts).
 - **AI proxy**: one OpenAI, Anthropic and Gemini compatible endpoint (`http://<panel machine>:8317/v1`) for your Claude, ChatGPT/Codex, Antigravity and Grok subscriptions, plus any API keys. It is [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) running unchanged as its own service; the panel is its control panel. See [AI proxy](#ai-proxy).
 - **Command palette**: <kbd>Ctrl</kbd>+<kbd>K</kbd> jumps to machines and runs any action.
 
@@ -65,8 +65,10 @@ The certificate authority is created on first start in `~/.local/state/fleet-pan
 ### Signing in
 
 - Requests from the panel's machine itself to `localhost` never need a login (an `ssh -L` tunnel counts).
-- Every other device needs a session. Get one by scanning a one-time pairing code (valid 5 minutes) or with the password.
-- The password is a generated passphrase, printed once in the service log on first start. Make a new one any time in **Add a device**.
+- Every other device needs a session. Get one by signing in to the panel's account or by scanning a one-time pairing code (valid 5 minutes).
+- There is one account: a username, a password (at least 10 characters) and, optionally, two-factor sign-in with an authenticator app (Google Authenticator, 1Password, Aegis…; TOTP, 6 digits, each code works once). You create it on first start: open the panel on its own machine (`http://localhost:4747`), or from another device with the setup code printed in the service log. Until it exists, nobody else can create it.
+- **Account** (sidebar, or Ctrl+K) changes the password and turns two-factor on or off. Both need the current password. Changing the password signs out every other device.
+- Locked out? `http://localhost:4747` on the panel's machine (or through `ssh -L`) never asks to sign in, so you can change the password or turn off two-factor there. Or set `FLEET_PASSWORD` and restart.
 - Sessions last 180 days. They're listed in **Add a device**, where you can revoke each one.
 - Login attempts are throttled per IP.
 
@@ -79,15 +81,13 @@ Set these as `Environment=` lines in a drop-in, `~/.config/systemd/user/fleet-pa
 | `PORT` | `4747` | HTTP port |
 | `TLS_PORT` | `4443` | HTTPS listener for phones; `0` disables it |
 | `HOST` | `0.0.0.0` | `127.0.0.1` keeps the panel on this machine only |
-| `FLEET_PASSWORD` | – | Use this password instead of a generated one |
+| `FLEET_USERNAME` | `admin` | With `FLEET_PASSWORD`: the account's username |
+| `FLEET_PASSWORD` | – | Create the account with this password, or reset its password, on every start (two-factor stays as it is) |
 | `ALLOWED_HOSTS` | – | Extra hostnames that may reach the panel, such as a reverse-proxy name |
 | `FLEET_FILE` | `../fleet.toml` | Legacy inventory to import once, on the first start with an empty database |
 | `FLEET_LOCAL_NODE` | – | Force which entry is "this machine" |
-| `FLEET_AI_MODEL` | `claude-opus-5-5` | Model for the AI chat |
-| `FLEET_AI_EFFORT` | `medium` | Effort for the AI chat: `low`, `medium`, `high`, `xhigh` or `max` |
 | `FLEET_AGENT_DIR` | `../agent` | Where the agent's collectors and binaries are |
 | `FLEET_AGENT_URLS` | LAN, then Tailscale addresses | Panel addresses written into agent configs, comma-separated (`https://…:4443`) |
-| `FLEET_AI_VIA_PROXY` | – | `1`: the AI chat uses the panel's AI proxy (its first client key) instead of this machine's Claude Code login. Set it when the panel's machine has no Claude Code login |
 
 On the phone, the bottom bar has Overview, Machines, Terminal, Activity and More. The terminal is full-screen and follows the on-screen keyboard. It has a row of the keys phones lack: esc, tab, sticky ctrl/alt, arrows, pipes, paste.
 
@@ -153,19 +153,29 @@ Every change is in the Activity log under Panel.
 
 ## Agents
 
-`fleet-agent` (`../agent/`, design in [`../docs/SERVER_AGENT.md`](../docs/SERVER_AGENT.md)) is a small Go program that runs the panel's own read-only collectors (probe, details, updates, index) on a machine and pushes their output over a WebSocket it opens to the panel (`wss://<panel>:4443/ws/agent`). It is report-only: it listens on no port and runs nothing but those four scripts. Terminals, actions, the AI chat and usage import still use ssh, and so do metrics whenever the agent isn't connected or its last report is stale.
+`fleet-agent` (`../agent/`, design in [`../docs/SERVER_AGENT.md`](../docs/SERVER_AGENT.md)) is a small Go program that runs the panel's own read-only collectors (probe, details, updates, index) on a machine and pushes their output over a WebSocket it opens to the panel (`wss://<panel>:4443/ws/agent`). It is report-only: it listens on no port and runs nothing but those four scripts. Terminals, actions and usage import still use ssh, and so do metrics whenever the agent isn't connected or its last report is stale.
 
 - **Install**: the **Agent** panel on a machine's page. **Install agent** copies it over ssh in a terminal tab and runs `fleet-agent install` (a systemd user service, with linger; answer the sudo prompt there). **Install command** gives a one-time `curl … | sh` (10 minutes, works once) for machines the panel can't ssh into. Every install makes a new token; **New token** and **Remove agent** are in the ⋯ menu. Not offered for the panel's own machine.
 - **Shows**: **agent** or **ssh** next to each online machine's status, and the agent's version, build and arch in the Agent panel, with a hint when it's out of date.
 - **Updates**: `../deploy.sh` builds the agent when its sources changed and syncs it to `~/fleet/agent/` on the panel's machine; connected agents download the new build, check its sha256 and restart themselves. Nothing to do on the machines.
 - **Files**: the collectors are `../agent/collectors/*.sh`, read by the panel at runtime for ssh and compiled into the agent. On a machine: `~/.local/bin/fleet-agent`, `~/.config/fleet-agent/` (config, token, CA), `~/.config/systemd/user/fleet-agent.service`. Logs: `journalctl --user -u fleet-agent`.
 
+## Custom scripts
+
+A machine's **update script** (Edit machine → Update) and **saved commands** (Run command → Your commands) are bash you write in the panel. Someone who got into the panel could write one too, so a script only runs on a machine after it was approved **on that machine**:
+
+- The panel shows the command wherever a script still needs approving (the Update dialog, Run command). Run it at the machine or over your own ssh, never from the panel:
+  - with `fleet-agent`: `~/.local/bin/fleet-agent approve <sha256>` fetches the script from the panel, checks it has that sha256, shows it (with hidden characters made visible) and asks;
+  - without it: `mkdir -p ~/.config/fleet && echo <sha256> >> ~/.config/fleet/approved-scripts`, after reading the script in the panel.
+- Approvals are sha256 hashes, one per line, in `~/.config/fleet/approved-scripts` on the machine. Changing a script changes its hash, so it needs approving again. `fleet-agent approved` lists them and `fleet-agent unapprove <hash>` takes one back (or edit the file).
+- Right before running, the command the panel sends checks that file for the exact script it carries, and stops with exit code 126 and the approve command if it isn't there. The probe reports the approved hashes, so the panel shows which machines still need to approve something.
+
 ## Claude skill
 
 The **Claude skill** page generates `SKILL.md` from the inventory: when to use it, how to answer, a table of machines, and every machine in full (connection, addresses, indexed hardware, notes, containers, listening ports, user services), plus your own **More instructions**.
 
 - **Install**: **Get install command** makes a one-time command (10 minutes, works once) that writes `~/.claude/skills/fleet/SKILL.md` on whatever machine runs it. Run a new one to update. Or download `SKILL.md`, or `fleet-skill.zip` for claude.ai.
-- **Live access** (on by default) puts the panel's address and an access token in the skill, so Claude fetches the current inventory instead of trusting the snapshot, and can add, edit, re-index and remove machines through the API above. The token opens only `/api/inventory*`, `/api/machines*` and `GET /api/panel/ssh-key`; not terminals, the AI chat, the proxy or anything else. Its changes show up in Activity as "Claude skill (ip)". **New token** cuts off copies installed before; switching live access off makes the token useless and the skill a snapshot.
+- **Live access** (on by default) puts the panel's address and an access token in the skill, so Claude fetches the current inventory instead of trusting the snapshot, and can add, edit, re-index and remove machines through the API above. The token opens only `/api/inventory*`, `/api/machines*` and `GET /api/panel/ssh-key`; not terminals, saved commands, the proxy or anything else. Its changes show up in Activity as "Claude skill (ip)". **New token** cuts off copies installed before; switching live access off makes the token useless and the skill a snapshot.
 - **Panel address** defaults to the address you opened the panel with (a LAN address when that was localhost); it must work from the machines that run Claude Code.
 
 ## How it works
@@ -178,22 +188,22 @@ The **Claude skill** page generates `SKILL.md` from the inventory: when to use i
   - It keeps a short history for the charts.
   - It saves last-seen times to `~/.local/state/fleet-panel/`.
 - `server.ts` is a custom Next server. It serves the app, and the `/ws` WebSocket multiplexes PTY sessions (`node-pty` → `ssh -t alias …`).
-- Actions in `lib/actions.ts` come from a fixed set (shell, update, reboot, shutdown, unit, container, logs, kill, exec). Unit and container names are validated before they reach a shell.
-- The AI chat (`lib/agent.ts`) uses the Claude Agent SDK, which signs in with this machine's Claude Code login (run `claude` and `/login` once), or with `FLEET_AI_VIA_PROXY=1` goes through the AI proxy, so its turns also show up in Traffic. Usage counts against that account. Claude Code's built-in tools, settings, hooks and CLAUDE.md files are switched off. The model gets only three tools: `run_command`, `read_file` and `write_file`. They run on a fleet machine through the same ssh as everything else, as your user, with no TTY. So `sudo` only works where it needs no password. For commands that do need one, an approval card has **Run it myself in a terminal**. The system prompt includes the whole inventory (the same Markdown as the skill's). Chats are saved in `~/.local/state/fleet-panel/ai-chats.json`, and each follow-up resumes the same Claude Code session. Browsers talk to it over the `/ws/ai` WebSocket.
+- Actions in `lib/actions.ts` come from a fixed set (update, reboot, shutdown, unit, container, logs, kill, check, script), built on the server. The browser only picks one and sends validated names, a pid, or the id of a built-in command (`lib/checks.ts`) or saved command (`lib/scripts.ts`); there is no action that takes a command line. Each runs as `bash` whatever the login shell is, with pagers and editors switched off (`PAGER=cat`, `LESSSECURE=1`, `EDITOR=false`) so an updater's prompt can't be turned into a shell.
 - The AI proxy (`lib/cpa.ts`) forwards `/api/proxy/m/*` to CLIProxyAPI's `/v8/management/*` with the management key, after the panel's own sign-in check, and logs every change. `/api/proxy/status`, `/service`, `/journal`, `/models`, `/test`, `/usage` and `/requests` are the panel's additions. The pages are in `components/proxy/`, one file per tab.
-- The activity log (`lib/audit.ts`) records everything done through the panel in SQLite at `~/.local/state/fleet-panel/activity.db` (Node's built-in `node:sqlite`): every terminal session and action with its command, who started it and its exit code; each line typed into it (answers to password prompts are replaced with dots); the full terminal output in `transcripts/<id>.log`; every AI prompt, each command and file read or write the AI made, who approved or declined it, its output and the reply; Wake-on-LAN, update checks and re-checks; sign-ins, pairing, revoked devices and password resets. It is kept forever. The Activity page reads it from `/api/activity` and gets live updates over `/ws`.
+- The activity log (`lib/audit.ts`) records everything done through the panel in SQLite at `~/.local/state/fleet-panel/activity.db` (Node's built-in `node:sqlite`): every terminal session and action with its command, who started it and its exit code; each line typed into it (answers to password prompts are replaced with dots); the full terminal output in `transcripts/<id>.log`; Wake-on-LAN, update checks and re-checks; account setup, sign-ins, pairing, revoked devices, password changes and two-factor changes. It is kept forever. The Activity page reads it from `/api/activity` and gets live updates over `/ws`.
 - Updates use the right tool for each machine's OS, detected from the index (os-release ID/ID_LIKE, then the OS name, then the package manager): Omarchy → `omarchy-update`, Arch → `yay`/`paru`/`pacman`, Debian/Ubuntu → `apt`, Fedora/RHEL → `dnf`, openSUSE → `zypper`, Alpine → `apk`. When the OS can't be detected, the Update dialog asks and saves the answer; it can also be set under Edit machine → Update. Pending packages come from `checkupdates` (+ `yay -Qua`) or `apt list --upgradable`.
 
 ## Security
 
-Anyone who can use this panel can run commands as you on every machine. So:
+Anyone who can use this panel can update, reboot and shut down every machine, restart services and containers, and run the scripts each machine approved. They can't run a command of their own: there is no shell, and a new or changed script runs nowhere until someone approves it on the machine itself. So:
 
 - **Everything needs a signed-in session**, including the WebSocket that carries terminals. The only exception is requests made on the panel's machine itself to `localhost` (an `ssh -L` tunnel counts).
 - Agents authenticate `/ws/agent` (HTTPS only) and binary downloads with a per-machine token, stored only as a sha256. A token can report metrics for its own machine and nothing else. One-time agent install codes work once, for 10 minutes. See [Agents](#agents).
 - The session cookie is `HttpOnly` and `SameSite=Lax`, and also `Secure` over HTTPS.
 - Every HTTP request and WebSocket upgrade must use one of this machine's own names or addresses in `Host`, and a matching `Origin`. This blocks DNS rebinding and cross-site WebSocket hijacking.
 - Pages can't be framed, and the `Referer` header is off, so pairing codes never leak through it.
-- The AI chat has the same reach as the terminal. In **Auto** mode it runs commands on your machines without asking, so only use Auto when you're watching or the task is low-risk.
+- Custom scripts (update scripts, saved commands) only run where the machine approved their exact sha256 (see [Custom scripts](#custom-scripts)). The panel checks that right before running and never writes approvals itself.
+- What you type into a running action's terminal still reaches it (sudo passwords, updater prompts), so treat a signed-in session as able to answer those prompts.
 - Keep it on your home network. Don't port-forward it. For access away from home, prefer Tailscale or `ssh -L 4747:localhost:4747 <panel machine>`.
 - Set `HOST=127.0.0.1` in the unit to make it local-only again.
 

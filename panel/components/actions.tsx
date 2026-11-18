@@ -14,37 +14,45 @@ import {
   Play,
   Power,
   RefreshCw,
+  Plus,
   RotateCw,
+  ShieldAlert,
   SquareTerminal,
   TerminalSquare,
+  Trash2,
 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { approvalOf, type SavedScript } from "@/lib/approval";
+import { CHECKS } from "@/lib/checks";
 import { ago } from "@/lib/format";
 import type { FleetNode, PkgManager } from "@/lib/types";
 import { UPDATE_OSES, updateOsInfo, type UpdateOs } from "@/lib/update-os";
 import { rebootHint, useFleet } from "./fleet-provider";
 import { useTerminals } from "./terminal-provider";
+import { AccountDialog } from "./account";
 import { DevicesDialog } from "./devices";
 import { api, MachineDialog, type MachineDialogState, type MachineSection } from "./machine-editor";
 import { useIsMobile } from "./hooks";
+import { ApprovalBadge, ApprovalNote } from "./approval";
 import { Md } from "./md";
 import { ACCENT, Badge, Button, HoldButton, Kbd, Modal, Spinner, StatusDot } from "./ui";
 
 type Dialog =
   | { type: "power"; node: string; kind: "reboot" | "shutdown" }
   | { type: "update"; nodes: string[] }
-  | { type: "run"; nodes: string[]; cmd?: string }
+  | { type: "run"; nodes: string[] }
   | { type: "devices" }
+  | { type: "account" }
   | { type: "machine"; state: NonNullable<MachineDialogState> }
   | null;
 
 interface ActionsCtx {
-  shell: (node: string) => void;
   power: (node: string, kind: "reboot" | "shutdown") => void;
   update: (nodes: string | string[]) => void;
-  run: (nodes?: string[], cmd?: string) => void;
+  run: (nodes?: string[]) => void;
   devices: () => void;
+  account: () => void;
   addMachine: () => void;
   editMachine: (id: string, section?: MachineSection) => void;
 }
@@ -102,24 +110,17 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
   const term = useTerminals();
   const fleet = useFleet();
 
-  const shell = useCallback(
-    (node: string) => {
-      term.open({ node, action: "shell" });
-    },
-    [term],
-  );
-
   const value = useMemo<ActionsCtx>(
     () => ({
-      shell,
       power: (node, kind) => setDialog({ type: "power", node, kind }),
       update: (nodes) => setDialog({ type: "update", nodes: Array.isArray(nodes) ? nodes : [nodes] }),
-      run: (nodes, cmd) => setDialog({ type: "run", nodes: nodes ?? [], cmd }),
+      run: (nodes) => setDialog({ type: "run", nodes: nodes ?? [] }),
       devices: () => setDialog({ type: "devices" }),
+      account: () => setDialog({ type: "account" }),
       addMachine: () => setDialog({ type: "machine", state: { mode: "add" } }),
       editMachine: (id, section) => setDialog({ type: "machine", state: { mode: "edit", id, section } }),
     }),
-    [shell],
+    [],
   );
 
   // React to sessions finishing: re-check updates, and summarise multi-machine commands.
@@ -172,7 +173,8 @@ export function ActionsProvider({ children }: { children: React.ReactNode }) {
       <PowerDialog dialog={dialog?.type === "power" ? dialog : null} onClose={close} />
       <UpdateDialog dialog={dialog?.type === "update" ? dialog : null} onClose={close} />
       <RunDialog dialog={dialog?.type === "run" ? dialog : null} onClose={close} onBatch={trackBatch} />
-      <DevicesDialog open={dialog?.type === "devices"} onClose={close} />
+      <DevicesDialog open={dialog?.type === "devices"} onClose={close} onAccount={value.account} />
+      <AccountDialog open={dialog?.type === "account"} onClose={close} />
       <MachineDialog dialog={dialog?.type === "machine" ? dialog.state : null} onClose={close} />
     </Ctx.Provider>
   );
@@ -343,6 +345,11 @@ function UpdateDialog({ dialog, onClose }: { dialog: { nodes: string[] } | null;
   // Picked machines with no detected or chosen OS: there's no knowing which updater to run until the user says.
   const unknownOs = picked.filter((id) => !nodeOf(id)?.updateOs);
   const missingOs = unknownOs.filter((id) => !osPick[id]);
+  // Machines whose update script they haven't approved: the run would stop before updating anything.
+  const unapproved = picked.filter((id) => {
+    const n = nodeOf(id);
+    return !!n?.updateScriptHash && approvalOf(fleet.states[id]?.metrics, n.updateScriptHash) === "pending";
+  });
   const editScript = () => {
     onClose();
     if (single) actions.editMachine(single, "update");
@@ -420,8 +427,14 @@ function UpdateDialog({ dialog, onClose }: { dialog: { nodes: string[] } | null;
             icon={Play}
             onClick={start}
             loading={starting}
-            disabled={picked.length === 0 || missingOs.length > 0}
-            title={missingOs.length ? `Choose which OS ${missingOs.join(", ")} ${missingOs.length === 1 ? "runs" : "run"} first` : undefined}
+            disabled={picked.length === 0 || missingOs.length > 0 || unapproved.length > 0}
+            title={
+              missingOs.length
+                ? `Choose which OS ${missingOs.join(", ")} ${missingOs.length === 1 ? "runs" : "run"} first`
+                : unapproved.length
+                  ? `${unapproved.join(", ")} ${unapproved.length === 1 ? "hasn't" : "haven't"} approved ${unapproved.length === 1 ? "its" : "their"} update script`
+                  : undefined
+            }
           >
             {single ? (info && info.count === 0 && !script ? "Run updater anyway" : "Start update") : `Update ${picked.length} machine${picked.length === 1 ? "" : "s"}`}
           </Button>
@@ -505,7 +518,11 @@ function UpdateDialog({ dialog, onClose }: { dialog: { nodes: string[] } | null;
                       {updateOsInfo(osPick[id])?.label ?? "OS?"}
                     </Badge>
                   )}
-                  {n.updateScript && <Badge tone="neutral" icon={FileCode2}>script</Badge>}
+                  {n.updateScript && (approvalOf(fleet.states[id]?.metrics, n.updateScriptHash) === "pending" ? (
+                    <Badge tone="yellow" icon={ShieldAlert}>script not approved</Badge>
+                  ) : (
+                    <Badge tone="neutral" icon={FileCode2}>script</Badge>
+                  ))}
                   {u == null ? (
                     <Spinner size={12} className="text-fg-4" />
                   ) : u.error ? (
@@ -523,6 +540,11 @@ function UpdateDialog({ dialog, onClose }: { dialog: { nodes: string[] } | null;
           })}
           {unknownOs.map((id) => (
             <OsQuestion key={id} node={nodeOf(id)!} value={osPick[id]} onChange={(os) => setOsPick((p) => ({ ...p, [id]: os }))} />
+          ))}
+          {unapproved.map((id) => (
+            <div key={id} className="mt-2.5">
+              <ApprovalNote node={nodeOf(id)!} hash={nodeOf(id)!.updateScriptHash!} what="its update script" compact />
+            </div>
           ))}
         </div>
       )}
@@ -590,6 +612,11 @@ export function UpdateScriptCard({ node, onEdit }: { node: FleetNode | undefined
         </Button>
       </div>
       <pre className="max-h-40 overflow-auto px-3 py-2 font-mono text-[11.5px] leading-relaxed text-fg-3">{node.updateScript}</pre>
+      {node.updateScriptHash && (
+        <div className="border-t border-line-2 px-3 py-2.5">
+          <ApprovalNote node={node} hash={node.updateScriptHash} what="this update script" />
+        </div>
+      )}
     </div>
   );
 }
@@ -628,56 +655,109 @@ export function PackageList({ info, loading, max = 200 }: { info?: { packages: {
 
 /* ---------------- run command ---------------- */
 
-const SNIPPETS: { label: string; cmd: string }[] = [
-  { label: "uptime", cmd: "uptime" },
-  { label: "disk usage", cmd: "df -h -x tmpfs -x devtmpfs -x efivarfs" },
-  { label: "memory", cmd: "free -h" },
-  { label: "failed units", cmd: "systemctl --failed --no-pager" },
-  { label: "errors this boot", cmd: "journalctl -p err -b --no-pager -n 50" },
-  { label: "containers", cmd: "docker ps -a 2>/dev/null || sudo docker ps -a" },
-  { label: "htop", cmd: "htop || top" },
-];
+/**
+ * Runs a built-in command or a saved one; there is no free-form command line.
+ * Saved commands only run on machines that approved them (lib/approval.ts).
+ */
+type RunPick = { kind: "check"; id: string } | { kind: "script"; id: string } | null;
+type Draft = { id: string | null; name: string; script: string };
 
 function RunDialog({
   dialog,
   onClose,
   onBatch,
 }: {
-  dialog: { nodes: string[]; cmd?: string } | null;
+  dialog: { nodes: string[] } | null;
   onClose: () => void;
   onBatch: (sessionIds: string[], cmd: string) => void;
 }) {
   const fleet = useFleet();
   const term = useTerminals();
-  const [cmd, setCmd] = useState("");
+  const [pick, setPick] = useState<RunPick>(null);
   const [picked, setPicked] = useState<string[]>([]);
+  const [scripts, setScripts] = useState<SavedScript[] | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
   const [openedFor, setOpenedFor] = useState<typeof dialog>(null);
-  const area = useRef<HTMLTextAreaElement>(null);
 
   if (dialog && dialog !== openedFor) {
     setOpenedFor(dialog);
-    setCmd(dialog.cmd ?? "");
-    setPicked(
-      dialog.nodes.length
-        ? dialog.nodes
-        : fleet.nodes.filter((n) => fleet.states[n.id]?.status === "online").map((n) => n.id),
-    );
+    setPick(null);
+    setDraft(null);
+    setPicked(dialog.nodes.length ? dialog.nodes : fleet.nodes.filter((n) => fleet.states[n.id]?.status === "online").map((n) => n.id));
   }
 
+  const load = useCallback(
+    () =>
+      api<{ scripts: SavedScript[] }>("GET", "/api/scripts").then(
+        (r) => setScripts(r.scripts),
+        (err) => {
+          toast.error("Couldn't load your saved commands", { description: (err as Error).message });
+          setScripts((s) => s ?? []);
+        },
+      ),
+    [],
+  );
+  useEffect(() => {
+    if (dialog) void load();
+  }, [dialog, load]);
+
+  const check = pick?.kind === "check" ? CHECKS.find((c) => c.id === pick.id) : undefined;
+  const script = pick?.kind === "script" ? scripts?.find((s) => s.id === pick.id) : undefined;
+  const nodeOf = (id: string) => fleet.nodes.find((n) => n.id === id);
+  const stateOn = (id: string) => (script ? approvalOf(fleet.states[id]?.metrics, script.hash) : "approved");
+  // A saved command is only started where it isn't known to be unapproved; the machine checks again anyway.
+  const runnable = picked.filter((id) => stateOn(id) !== "pending");
+  const blocked = picked.filter((id) => stateOn(id) === "pending");
+  const label = check?.label ?? script?.name ?? "";
+
   const run = async () => {
-    const c = cmd.trim();
-    if (!c || picked.length === 0) return;
+    if (draft || (!check && !script) || runnable.length === 0) return;
     onClose();
     const ids: string[] = [];
-    for (const id of picked) {
-      const s = await term.open({ node: id, action: "exec", params: { cmd: c } }, { focus: id === picked[picked.length - 1] });
+    for (const id of runnable) {
+      const spec = check ? { check: check.id } : { script: script!.id };
+      const s = await term.open({ node: id, action: check ? "check" : "script", params: spec }, { focus: id === runnable[runnable.length - 1] });
       if (s) ids.push(s.id);
     }
     if (ids.length > 1) {
-      onBatch(ids, c);
+      onBatch(ids, label);
       toast(`Running on ${ids.length} machines`, { description: "You'll get a summary of exit codes when they all finish." });
     }
   };
+
+  const saveDraft = async () => {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      const body = { name: draft.name, script: draft.script };
+      const s = draft.id ? await api<SavedScript>("PATCH", `/api/scripts/${draft.id}`, body) : await api<SavedScript>("POST", "/api/scripts", body);
+      await load();
+      setDraft(null);
+      setPick({ kind: "script", id: s.id });
+    } catch (err) {
+      toast.error("Couldn't save the command", { description: (err as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (s: SavedScript) => {
+    if (!window.confirm(`Delete the saved command “${s.name}”?`)) return;
+    try {
+      await api("DELETE", `/api/scripts/${s.id}`);
+      if (pick?.kind === "script" && pick.id === s.id) setPick(null);
+      await load();
+    } catch (err) {
+      toast.error("Couldn't delete the command", { description: (err as Error).message });
+    }
+  };
+
+  const chip = (on: boolean) =>
+    clsx(
+      "inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[12px] font-medium ring-1 transition-all ring-inset",
+      on ? "bg-magenta/10 text-magenta ring-magenta/40" : "text-fg-3 ring-line-2 hover:text-fg hover:ring-line-3",
+    );
 
   return (
     <Modal
@@ -685,9 +765,9 @@ function RunDialog({
       onClose={onClose}
       icon={SquareTerminal}
       tone="magenta"
-      width={600}
+      width={640}
       title="Run command"
-      description="One terminal tab per machine, as your ssh user. Prefix sudo if needed."
+      description="A built-in command, or one of your saved commands on the machines that approved it. One terminal tab per machine."
       footer={
         <>
           <span className="mr-auto hidden items-center gap-1.5 text-[11.5px] text-fg-4 sm:flex">
@@ -697,79 +777,173 @@ function RunDialog({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" icon={Play} onClick={run} disabled={!cmd.trim() || picked.length === 0}>
-            Run on {picked.length} {picked.length === 1 ? "machine" : "machines"}
+          <Button
+            variant="primary"
+            icon={Play}
+            onClick={run}
+            disabled={!!draft || (!check && !script) || runnable.length === 0}
+            title={blocked.length ? `Not approved on ${blocked.join(", ")}` : undefined}
+          >
+            Run on {runnable.length} {runnable.length === 1 ? "machine" : "machines"}
           </Button>
         </>
       }
     >
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        <button
-          onClick={() => {
-            const all = fleet.nodes.filter((n) => fleet.displayStatus(n.id) === "online").map((n) => n.id);
-            setPicked((p) => (p.length === all.length ? [] : all));
-          }}
-          className="inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-[12px] font-medium text-fg-3 ring-1 ring-line-2 ring-inset hover:text-fg hover:ring-line-3"
-        >
-          All online
-        </button>
-        {fleet.nodes.map((n) => {
-          const on = picked.includes(n.id);
-          const st = fleet.displayStatus(n.id);
-          const a = ACCENT[fleet.accent(n.id)];
-          return (
-            <button
-              key={n.id}
-              disabled={st !== "online"}
-              onClick={() => setPicked((p) => (on ? p.filter((x) => x !== n.id) : [...p, n.id]))}
-              className={clsx(
-                "inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-3 font-mono text-[12px] font-medium ring-1 transition-all ring-inset disabled:cursor-not-allowed disabled:opacity-40",
-                on ? clsx(a.text, a.ring, a.soft) : "text-fg-4 ring-line-2 hover:text-fg-2 hover:ring-line-3",
-                st !== "online" && "line-through",
-              )}
-              title={st !== "online" ? `${n.id} is not reachable` : undefined}
-            >
-              <StatusDot status={st} size={6} />
-              {n.id}
-            </button>
-          );
-        })}
-      </div>
-      <div className="group relative rounded-lg border border-line-2 bg-void/60 transition-colors focus-within:border-magenta/50">
-        <span className="pointer-events-none absolute top-[11px] left-3 font-mono text-[13px] text-magenta">❯</span>
-        <textarea
-          ref={area}
-          data-autofocus
-          value={cmd}
-          onChange={(e) => setCmd(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              run();
-            }
-          }}
-          rows={3}
-          spellCheck={false}
-          placeholder="uptime && df -h /"
-          className="block w-full resize-none bg-transparent py-2.5 pr-3 pl-8 font-mono text-[13px] text-fg placeholder:text-fg-5 focus:outline-none"
-        />
-      </div>
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {SNIPPETS.map((s) => (
+      <div
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !draft) {
+            e.preventDefault();
+            run();
+          }
+        }}
+      >
+        <div className="mb-4 flex flex-wrap gap-1.5">
           <button
-            key={s.label}
             onClick={() => {
-              setCmd(s.cmd);
-              area.current?.focus();
+              const all = fleet.nodes.filter((n) => fleet.displayStatus(n.id) === "online").map((n) => n.id);
+              setPicked((p) => (p.length === all.length ? [] : all));
             }}
-            className="cursor-pointer rounded-md bg-hl/50 px-2 py-1 text-[11.5px] text-fg-3 transition-colors hover:bg-hl hover:text-fg"
+            className="inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-[12px] font-medium text-fg-3 ring-1 ring-line-2 ring-inset hover:text-fg hover:ring-line-3"
           >
-            {s.label}
+            All online
           </button>
-        ))}
+          {fleet.nodes.map((n) => {
+            const on = picked.includes(n.id);
+            const st = fleet.displayStatus(n.id);
+            const a = ACCENT[fleet.accent(n.id)];
+            return (
+              <button
+                key={n.id}
+                disabled={st !== "online"}
+                onClick={() => setPicked((p) => (on ? p.filter((x) => x !== n.id) : [...p, n.id]))}
+                className={clsx(
+                  "inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-3 font-mono text-[12px] font-medium ring-1 transition-all ring-inset disabled:cursor-not-allowed disabled:opacity-40",
+                  on ? clsx(a.text, a.ring, a.soft) : "text-fg-4 ring-line-2 hover:text-fg-2 hover:ring-line-3",
+                  st !== "online" && "line-through",
+                )}
+                title={st !== "online" ? `${n.id} is not reachable` : undefined}
+              >
+                <StatusDot status={st} size={6} />
+                {n.id}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mb-1.5 text-[12px] font-medium text-fg-3">Built in</div>
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {CHECKS.map((c) => (
+            <button key={c.id} type="button" onClick={() => setPick({ kind: "check", id: c.id })} className={chip(check?.id === c.id)} title={c.cmd}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-[12px] font-medium text-fg-3">Your commands</span>
+          <span className="text-[11.5px] text-fg-4">run only where the machine approved them</span>
+          {!draft && (
+            <Button size="xs" variant="ghost" icon={Plus} className="ml-auto" onClick={() => setDraft({ id: null, name: "", script: "" })}>
+              New
+            </Button>
+          )}
+        </div>
+        {draft ? (
+          <div className="rounded-lg border border-magenta/30 bg-void/40 p-3">
+            <input
+              data-autofocus
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              placeholder="Name, like “prune docker images”"
+              aria-label="Name"
+              className="mb-2 h-8 w-full rounded-md border border-line-2 bg-void/60 px-2.5 text-[13px] text-fg placeholder:text-fg-5 focus:border-magenta/50 focus:outline-none"
+            />
+            <textarea
+              value={draft.script}
+              onChange={(e) => setDraft({ ...draft, script: e.target.value })}
+              rows={Math.min(12, Math.max(4, draft.script.split("\n").length + 1))}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              placeholder={"docker image prune -f\ndf -h /"}
+              aria-label="Script"
+              className="block w-full resize-y rounded-md border border-line-2 bg-void/60 px-2.5 py-2 font-mono text-[12.5px] text-fg placeholder:text-fg-5 focus:border-magenta/50 focus:outline-none"
+            />
+            <p className="mt-2 text-[11.5px] leading-relaxed text-fg-4">
+              Runs with bash as the machine&apos;s ssh user. Before it runs anywhere, that machine has to approve it: you&apos;ll get a command to run there. Changing it later needs approving again.
+            </p>
+            <div className="mt-2.5 flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setDraft(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" variant="primary" loading={saving} disabled={!draft.name.trim() || !draft.script.trim()} onClick={saveDraft}>
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : scripts === null ? (
+          <div className="skeleton h-9 rounded-lg" />
+        ) : scripts.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-line-2 px-3 py-2.5 text-[12px] text-fg-4">
+            None yet. Save a command once, approve it on the machines that should run it, then run it from here.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {scripts.map((s) => {
+              const on = script?.id === s.id;
+              const approvedOn = picked.filter((id) => approvalOf(fleet.states[id]?.metrics, s.hash) === "approved").length;
+              return (
+                <div
+                  key={s.id}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors",
+                    on ? "border-magenta/40 bg-magenta/[0.07]" : "border-line-2 bg-void/30 hover:border-line-3",
+                  )}
+                >
+                  <button type="button" onClick={() => setPick({ kind: "script", id: s.id })} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left">
+                    <FileCode2 size={13} className={on ? "text-magenta" : "text-fg-4"} />
+                    <span className="truncate text-[13px] font-medium text-fg-2">{s.name}</span>
+                    {picked.length > 0 && (
+                      <span className="shrink-0 text-[11.5px] text-fg-4">
+                        approved on {approvedOn} of {picked.length}
+                      </span>
+                    )}
+                  </button>
+                  <Button size="xs" variant="ghost" icon={Pencil} aria-label={`Edit ${s.name}`} onClick={() => setDraft({ id: s.id, name: s.name, script: s.script })} />
+                  <Button size="xs" variant="ghost" icon={Trash2} aria-label={`Delete ${s.name}`} onClick={() => remove(s)} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!draft && check && (
+          <div className="mt-4 rounded-lg border border-line-2 bg-void/60 px-3 py-2 font-mono text-[12px] text-fg-3">
+            <span className="text-magenta">❯</span> {check.cmd}
+          </div>
+        )}
+        {!draft && script && (
+          <div className="mt-4 space-y-2">
+            <pre className="max-h-48 overflow-auto rounded-lg border border-line-2 bg-void/60 px-3 py-2 font-mono text-[12px] leading-relaxed text-fg-3">{script.script}</pre>
+            {picked.map((id) => {
+              const n = nodeOf(id);
+              if (!n) return null;
+              const st = stateOn(id);
+              return st === "approved" ? (
+                <div key={id} className="flex items-center gap-2 text-[12px] text-fg-4">
+                  <span className="font-mono text-fg-3">{id}</span>
+                  <ApprovalBadge state={st} />
+                </div>
+              ) : (
+                <ApprovalNote key={id} node={n} hash={script.hash} what={`“${script.name}”`} compact={picked.length > 1} />
+              );
+            })}
+          </div>
+        )}
       </div>
     </Modal>
   );
 }
+
 
 export type { FleetNode };

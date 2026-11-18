@@ -21,6 +21,7 @@ export function parseProbe(
   const seenDev = new Set<string>();
   const addrs: { iface: string; addr: string }[] = [];
   const failed: string[] = [];
+  const approved: string[] = [];
   for (const line of out.split("\n")) {
     const i = line.indexOf("=");
     if (i < 0) continue;
@@ -37,6 +38,8 @@ export function parseProbe(
       if (!/^(docker|br-|veth|virbr|lo)/.test(iface)) addrs.push({ iface, addr: addr?.split("/")[0] ?? "" });
     } else if (k === "failed") {
       if (v) failed.push(v);
+    } else if (k === "approved") {
+      if (/^[0-9a-f]{64}$/.test(v)) approved.push(v);
     } else {
       kv[k] = v;
     }
@@ -92,6 +95,8 @@ export function parseProbe(
     pkg: (kv.pkg as PkgManager) ?? "unknown",
     procs: Number(kv.procs ?? 0),
     users: Number(kv.users ?? 0),
+    // An agent from before approvals existed doesn't say; that's "unknown", not "none approved".
+    approved: kv.approvals === "1" ? approved : null,
   };
   return { metrics, sample };
 }

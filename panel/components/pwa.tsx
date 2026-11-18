@@ -53,6 +53,10 @@ export interface Me {
   authed: boolean;
   local: boolean;
   device: { name: string } | null;
+  /** Whether the panel's account exists yet (it's created on first start). */
+  account: boolean;
+  username: string | null;
+  totp: boolean | null;
   hostname: string;
   tls: { port: number } | null;
   port: number;

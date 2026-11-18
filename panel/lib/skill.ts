@@ -1,6 +1,5 @@
 /**
- * The inventory as Markdown: for the AI chat's system prompt, for
- * /api/inventory.md, and as the Claude skill (SKILL.md) people download from
+ * The inventory as Markdown: for /api/inventory.md, and as the Claude skill (SKILL.md) people download from
  * the panel and install into ~/.claude/skills/fleet/.
  */
 import { deflateRawSync } from "node:zlib";
@@ -140,7 +139,7 @@ export function skillMarkdown(nodes: FleetNode[], o: SkillOptions): string {
       `curl -fsS${auth} ${o.panelUrl}/api/panel/ssh-key                      # the key a new machine must authorize`,
       "```",
       "",
-      "Fields: `id` (the name; set once), `host`, `user`, `port`, `alias` (an ~/.ssh/config alias), `kind` (desktop, laptop, server, vps, raspberry-pi, nas, other; `null` to detect it), `use` (what it's for), `location`, `notes`, `mac` (for Wake-on-LAN; `null` to use the detected wired MAC), `addresses` (`[{\"label\", \"address\", \"notes\"}]`, for addresses the machine doesn't have on an interface, like a DNS name, or notes on one it does), `updateOs` (which OS family the Update button runs the system update for: omarchy, arch, debian, fedora, opensuse, alpine; `null` to detect it from the indexed OS). `addresses` replaces the whole list, so read the machine from `/api/inventory` first and send the edited list back. A machine's update script (`updateScript`, `updateScriptWhen`) can only be changed in the panel; if the user wants one, write it for them and tell them to paste it under Edit machine → Update.",
+      "Fields: `id` (the name; set once), `host`, `user`, `port`, `alias` (an ~/.ssh/config alias), `kind` (desktop, laptop, server, vps, raspberry-pi, nas, other; `null` to detect it), `use` (what it's for), `location`, `notes`, `mac` (for Wake-on-LAN; `null` to use the detected wired MAC), `addresses` (`[{\"label\", \"address\", \"notes\"}]`, for addresses the machine doesn't have on an interface, like a DNS name, or notes on one it does), `updateOs` (which OS family the Update button runs the system update for: omarchy, arch, debian, fedora, opensuse, alpine; `null` to detect it from the indexed OS). `addresses` replaces the whole list, so read the machine from `/api/inventory` first and send the edited list back. A machine's update script (`updateScript`, `updateScriptWhen`) can only be changed in the panel; if the user wants one, write it for them and tell them to paste it under Edit machine → Update. It only runs after they approve it on the machine itself (the panel's Update dialog shows the command to run there).",
       "",
       "A new machine is indexed as soon as it's added, if the panel's ssh key is in its `~/.ssh/authorized_keys`. The response's `indexError` says what went wrong otherwise.",
       "",

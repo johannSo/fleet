@@ -6,6 +6,7 @@
  *   wss  /ws/agent                       an agent's connection (Authorization: Bearer <machine token>)
  *   GET  /agent/install/<code>           install script for a one-time install command (no session)
  *   GET  /agent/bin/<arch>               the agent binary (machine token, or the install script's ticket)
+ *   GET  /agent/script/<sha256>          a custom script, for `fleet-agent approve` to show before approving (machine token)
  *   POST /api/agents/<id>/command        make a one-time install command
  *   DELETE /api/agents/<id>              revoke the machine's token (the agent stops reporting)
  *
@@ -33,6 +34,7 @@ import { clientIp } from "./auth";
 import { AGENT_ARCHES, AGENT_BIN_DIR, agentRelease, COLLECTOR_KINDS, goArch, type AgentArch, type CollectorKind } from "./collectors";
 import { getNode, InventoryError, machineForAgentToken, recordAgent, setAgentTokenHash } from "./fleet";
 import { STATE_DIR } from "./net";
+import { scriptForApproval } from "./scripts";
 import { SSH_BASE_OPTS, shq, sshDest } from "./ssh";
 import { ingestAgentReport, ingestBackfill } from "./state";
 import { CA_CERT } from "./tls";
@@ -293,7 +295,7 @@ function plain(res: ServerResponse, status: number, body: string, type = "text/p
   res.end(body);
 }
 
-/** /agent/install/<code> and /agent/bin/<arch>: reached without a session, by the installer and by agents. */
+/** /agent/install/<code>, /agent/bin/<arch> and /agent/script/<sha256>: reached without a session, by the installer and by agents. */
 export function handleAgentPublic(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   const { pathname } = url;
   if (!pathname.startsWith("/agent/") || req.method !== "GET") return false;
@@ -331,6 +333,19 @@ export function handleAgentPublic(req: IncomingMessage, res: ServerResponse, url
     res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(b.size), "cache-control": "no-store", "x-sha256": b.sha256 });
     createReadStream(b.file).pipe(res);
     return true;
+  }
+
+  // `fleet-agent approve <sha256>`, run by the machine's owner on the machine: shows the script, then asks.
+  // The agent checks the hash itself, so the panel can't get a different script approved.
+  const script = pathname.match(/^\/agent\/script\/([0-9a-f]{64})$/);
+  if (script) {
+    const bearer = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1];
+    const id = bearer ? machineForAgentToken(hashToken(bearer)) : null;
+    if (!id) return plain(res, 401, "Not authorized\n"), true;
+    const found = scriptForApproval(id, script[1]);
+    if (!found) return json(res, 404, { error: "The panel has no script with that hash (it was changed or deleted)" }), true;
+    logActivity({ source: "panel", kind: "panel.script", actor: "fleet-agent", node: id, summary: `Sent “${found.name}” to the machine for approval`, status: "info" });
+    return json(res, 200, { machine: id, name: found.name, script: found.script }), true;
   }
 
   plain(res, 404, "Not found\n");

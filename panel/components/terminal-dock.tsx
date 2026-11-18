@@ -28,7 +28,8 @@ const ACTION_ICON: Partial<Record<SessionInfo["action"], string>> = {
   reboot: "↻",
   shutdown: "⏻",
   logs: "≡",
-  exec: "❯",
+  check: "❯",
+  script: "❯",
 };
 
 function TabDot({ s }: { s: SessionInfo }) {
@@ -88,12 +89,13 @@ export function TerminalDock() {
   };
 
   const running = t.sessions.filter((s) => !s.exited).length;
-  const shellItems = fleet.nodes.map((n) => ({
+  // New tabs come from Run command: built-in commands and approved scripts, never a shell.
+  const runItems = fleet.nodes.map((n) => ({
     label: n.id,
     icon: TerminalSquare,
-    hint: fleet.displayStatus(n.id) === "online" ? (n.local ? "local" : (n.sshCommand ?? "")) : "offline",
+    hint: fleet.displayStatus(n.id) === "online" ? "Run command…" : "offline",
     disabled: fleet.displayStatus(n.id) !== "online",
-    onSelect: () => actions.shell(n.id),
+    onSelect: () => actions.run([n.id]),
   }));
 
   return (
@@ -161,9 +163,9 @@ export function TerminalDock() {
             })}
           </div>
           <Menu
-            items={shellItems}
+            items={runItems}
             trigger={(p) => (
-              <button {...p} aria-label="New shell" className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-blue active:bg-hl">
+              <button {...p} aria-label="Run command" className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-blue active:bg-hl">
                 <Plus size={22} />
               </button>
             )}
@@ -257,7 +259,7 @@ export function TerminalDock() {
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5 pl-1">
-          <Menu items={shellItems} trigger={(p) => <IconButton icon={Plus} label="New shell" size={30} {...p} />} />
+          <Menu items={runItems} trigger={(p) => <IconButton icon={Plus} label="Run command" size={30} {...p} />} />
           {open && (
             <IconButton
               size={30}
@@ -284,7 +286,7 @@ export function TerminalDock() {
                 <TerminalView id={s.id} visible={open && s.id === t.activeId} />
               </div>
               {s.exited && <ExitBar s={s} />}
-              {!s.exited && s.action !== "shell" && (
+              {!s.exited && (
                 <div className="flex h-8 shrink-0 items-center gap-2 border-t border-line/70 px-3 text-[11.5px] text-fg-4">
                   <span className="truncate font-mono">{s.command.split("\n")[0]}</span>
                   <Button size="xs" variant="ghost" icon={Square} className="ml-auto" onClick={() => t.kill(s.id)}>
@@ -314,12 +316,12 @@ function ExitBar({ s }: { s: SessionInfo }) {
       )}
     >
       <span className={clsx("size-1.5 rounded-full", ok ? "bg-green" : "bg-red")} />
-      {s.action === "shell" ? "Shell closed" : ok ? "Finished" : `Exited with code ${s.exitCode}`}
+      {ok ? "Finished" : s.exitCode === 126 && s.action !== "check" ? "Not run: needs approval on the machine" : `Exited with code ${s.exitCode}`}
       <span className="text-fg-5">·</span>
       <span className="truncate font-mono text-fg-4">{s.node}</span>
       <div className="ml-auto flex items-center gap-1">
         <Button size="xs" variant="ghost" icon={RotateCw} onClick={() => t.open(s.spec)}>
-          {s.action === "shell" ? "Reconnect" : "Run again"}
+          Run again
         </Button>
         <Button size="xs" variant="ghost" icon={X} onClick={() => t.close(s.id)}>
           Close
@@ -340,7 +342,7 @@ function EmptyDock() {
         </div>
         <div className="text-[13px] font-medium text-fg-2">No open sessions</div>
         <div className="mt-1 mb-4 text-[12px] text-fg-4">
-          Open a shell on a machine — sessions keep running if you reload the page.
+          Run a command on a machine — sessions keep running if you reload the page.
         </div>
         <div className="flex flex-wrap justify-center gap-1.5">
           {fleet.nodes.map((n) => {
@@ -350,7 +352,7 @@ function EmptyDock() {
               <button
                 key={n.id}
                 disabled={st !== "online"}
-                onClick={() => actions.shell(n.id)}
+                onClick={() => actions.run([n.id])}
                 className={clsx(
                   "inline-flex h-8 cursor-pointer items-center gap-2 rounded-md bg-raised px-3 font-mono text-[12.5px] ring-1 ring-line-2 transition-colors ring-inset hover:bg-hover hover:ring-line-3 disabled:cursor-not-allowed disabled:opacity-40",
                   a.text,

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -131,9 +132,14 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) httpClient() *http.Client {
+	return panelClient(a.Cfg.CA)
+}
+
+// panelClient talks to the panel only: it trusts the panel's own CA, never the
+// system store, and ignores proxy settings.
+func panelClient(ca *x509.CertPool) *http.Client {
 	return &http.Client{Transport: &http.Transport{
-		// Only the panel's own CA, never the system store.
-		TLSClientConfig:     &tls.Config{RootCAs: a.Cfg.CA, MinVersion: tls.VersionTLS12},
+		TLSClientConfig:     &tls.Config{RootCAs: ca, MinVersion: tls.VersionTLS12},
 		Proxy:               nil,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}}

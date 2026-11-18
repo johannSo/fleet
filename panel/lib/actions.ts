@@ -1,5 +1,7 @@
 import os from "node:os";
 import { agentLaunch } from "./agent-server";
+import { checkById } from "./checks";
+import { approvalCheck, getSavedScript } from "./scripts";
 import { SSH_BASE_OPTS, shq, sshDest } from "./ssh";
 import type { FleetNode, SessionSpec } from "./types";
 import { updateOsInfo, type UpdateOs } from "./update-os";
@@ -16,6 +18,20 @@ const NAME_RE = /^[A-Za-z0-9@._:\\-]+$/;
 const UNIT_OPS = new Set(["start", "stop", "restart", "status", "reload"]);
 const CONTAINER_OPS = new Set(["start", "stop", "restart"]);
 const SIGNALS = new Set(["TERM", "KILL", "HUP", "INT"]);
+
+/**
+ * Every action is built here, on the server, from a fixed list: the browser
+ * only picks one and passes validated names (a unit, a container, a pid) or
+ * the id of a built-in command or a saved one. There is no shell and no way to
+ * send a command line. Custom scripts (update scripts, saved commands) only run
+ * where the machine approved them (lib/approval.ts).
+ */
+
+/**
+ * Keeps interactive programs from handing out a shell: pagers and editors are
+ * the usual way out of an updater's prompts (less's "!", vi's ":!").
+ */
+const NO_ESCAPES = "export PAGER=cat GIT_PAGER=cat SYSTEMD_PAGER=cat LESSSECURE=1 EDITOR=false VISUAL=false";
 
 function need(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -80,10 +96,11 @@ function updateCommand(node: FleetNode, auto: boolean): string {
     systemUpdate(node.updateOs, y),
     ")",
   ].join("\n");
-  const script = node.updateScript.trim();
+  // Exactly what was hashed, so what runs is what the machine approved.
+  const script = node.updateScript;
   if (!script) return system;
 
-  // bash whatever the login shell is; FLEET_UPDATE_AUTO tells the script whether prompts are being auto-answered.
+  // FLEET_UPDATE_AUTO tells the script whether prompts are being auto-answered.
   const custom = [banner(`${node.id} update script`), `FLEET_UPDATE_AUTO=${y ? 1 : 0} bash -c ${shq(script)} fleet-update`].join("\n");
   const before = node.updateScriptWhen === "before";
   const [first, second] = before ? [custom, system] : [system, custom];
@@ -96,14 +113,16 @@ function updateCommand(node: FleetNode, auto: boolean): string {
   ].join("\n");
 }
 
-function remoteCommand(node: FleetNode, spec: SessionSpec): { title: string; cmd: string | null } {
+/** `display` is what the tab shows when it isn't the command with its banner taken off. */
+function remoteCommand(node: FleetNode, spec: SessionSpec): { title: string; cmd: string; display?: string } {
   const p = spec.params ?? {};
   switch (spec.action) {
-    case "shell":
-      return { title: "shell", cmd: null };
-
-    case "update":
-      return { title: "update", cmd: updateCommand(node, p.auto === true) };
+    case "update": {
+      const cmd = updateCommand(node, p.auto === true);
+      // Checked before anything runs, so an unapproved script never leaves an update half done.
+      if (!node.updateScript || !node.updateScriptHash) return { title: "update", cmd };
+      return { title: "update", cmd: `${approvalCheck(node, node.updateScriptHash, `The update script for ${node.id}`)}\n${cmd}`, display: cmd };
+    }
 
     case "reboot":
       return { title: "reboot", cmd: `${banner("rebooting")}; sudo systemctl reboot` };
@@ -163,36 +182,42 @@ function remoteCommand(node: FleetNode, spec: SessionSpec): { title: string; cmd
       };
     }
 
-    case "exec": {
-      const cmd = String(p.cmd ?? "").trim();
-      need(cmd.length > 0 && cmd.length < 4000, "Empty command");
-      const title = typeof p.title === "string" && p.title ? p.title : cmd.split(/\s+/).slice(0, 3).join(" ");
-      return { title, cmd };
+    case "check": {
+      const check = checkById(String(p.check ?? ""));
+      need(check, "Unknown built-in command");
+      return { title: check.label, cmd: `${banner(check.label)}; ${check.cmd}`, display: check.cmd };
+    }
+
+    case "script": {
+      const saved = getSavedScript(String(p.script ?? ""));
+      need(saved, "That saved command doesn't exist any more");
+      const run = `${banner(saved.name)}\nbash -c ${shq(saved.script)} ${shq(saved.name)}`;
+      return { title: saved.name, cmd: `${approvalCheck(node, saved.hash, `“${saved.name}”`)}\n${run}`, display: saved.script };
     }
 
     case "agent":
       throw new Error("agent actions run on the panel's machine");
+
+    default:
+      // "shell" and "exec" from an old tab or a crafted message: there's no free-form command any more.
+      throw new Error(`“${String(spec.action)}” isn't an action the panel runs`);
   }
 }
 
 export function buildLaunch(node: FleetNode, spec: SessionSpec, actor = "unknown"): Launch {
   // Installing, re-keying and removing fleet-agent: a script on this machine that uses ssh (lib/agent-server.ts).
   if (spec.action === "agent") return agentLaunch(node, String(spec.params?.op ?? ""), actor);
-  const { title, cmd } = remoteCommand(node, spec);
-  const display = cmd === null ? "interactive shell" : cmd.replace(/^printf[^;\n]*;?\s*/m, "").replace(/^d\(\)\{[^}]*\}; /, "");
+  const { title, cmd, display: shown } = remoteCommand(node, spec);
+  const display = shown ?? cmd.replace(/^printf[^;\n]*;?\s*/m, "").replace(/^d\(\)\{[^}]*\}; /, "");
+  const script = `${NO_ESCAPES}\n${cmd}`;
 
-  if (node.local) {
-    const shell = process.env.SHELL || "/bin/bash";
-    return {
-      title,
-      command: display,
-      file: cmd === null ? shell : "bash",
-      args: cmd === null ? ["-l"] : ["-lc", cmd],
-    };
-  }
+  if (node.local) return { title, command: display, file: "bash", args: ["-lc", script] };
   need(node.sshTarget, `${node.id} has no connection set up`);
-  const args = [...SSH_BASE_OPTS, "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR", "-t", ...sshDest(node)];
-  if (cmd !== null) args.push("--", cmd);
+  // ssh hands this to the login shell, which may be fish or zsh; the commands are bash. Base64 inside
+  // plain single quotes reads the same in every shell, and keeps the terminal as stdin for prompts.
+  const payload = Buffer.from(script, "utf8").toString("base64");
+  const remote = `bash -c 'eval "$(echo ${payload} | base64 -d)"'`;
+  const args = [...SSH_BASE_OPTS, "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR", "-t", ...sshDest(node), "--", remote];
   return { title, command: display, file: "ssh", args };
 }
 

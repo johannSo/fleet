@@ -7,7 +7,7 @@ Without an agent, the panel opens an ssh channel for everything it shows: a prob
 ## What it does and doesn't do
 
 - **Report only.** The agent runs a fixed set of scripts built into its binary: probe, details, updates, index. The panel can't send it a command. It can only change the report interval, ask it to run one of those collectors now, and offer a new version.
-- **Actions, terminals and the AI chat stay on ssh.** So does `usage-import` (Claude Code and Codex logs); that could become a collector later.
+- **Actions and terminals stay on ssh.** So does `usage-import` (Claude Code and Codex logs); that could become a collector later.
 - **The agent starts every connection.** It listens on no port, so a machine gets no new attack surface.
 - **The panel's own machine doesn't need one.** It runs the panel, which runs the scripts locally already. The panel refuses to install an agent on its own machine.
 
@@ -66,7 +66,7 @@ The panel closes the connection with code 4001 when the machine's token is repla
 
 - A single static binary, `fleet-agent`, for amd64 and arm64. `agent/build.sh` builds both into `agent/bin/` with `CGO_ENABLED=0`; `deploy.sh` runs it on the deploying machine when the agent's sources changed. Dependencies: `github.com/coder/websocket` and `github.com/BurntSushi/toml`.
 - The **build id** is a hash of the agent's sources (Go files, collectors, `go.mod`/`go.sum`, not tests), written to `bin/BUILD`. The same sources always give the same id, so agents only update when the agent actually changed. The version (`0.1.0`) is set in `main.go`.
-- Commands: `run` (what the service runs), `install`, `uninstall`, `collect <kind>` (run one collector and print it, for debugging), `version`.
+- Commands: `run` (what the service runs), `install`, `uninstall`, `collect <kind>` (run one collector and print it, for debugging), `approve <sha256>`, `approved`, `unapprove <hash>` (see [Approving custom scripts](#approving-custom-scripts)), `version`.
 - Config in `~/.config/fleet-agent/` (0700, files 0600): `config.toml` (`id`, and `urls` in order, for example LAN `https://192.168.1.10:4443` then Tailscale `https://100.64.0.10:4443`), `token`, `ca.pem`. Always under `~/.config`, never `$XDG_CONFIG_HOME`, so the installer's shell and the service agree. `FLEET_AGENT_CONFIG` overrides the directory.
 - Trusts only the panel's CA (pinned), not the system store, and ignores proxy environment variables. The CA is already name-constrained to private ranges, including Tailscale's 100.64.0.0/10.
 - Reconnects with backoff (1 s doubling to 60 s), trying each URL in turn. A rejected token (401, or close code 4001) waits the full 60 s between tries. It pings the panel every 30 s and reconnects when a pong doesn't come within 15 s.
@@ -103,16 +103,26 @@ Each online machine shows how it's reporting, next to its status on the Overview
 
 The Agent panel shows status, version and build, arch, and a hint when the agent is out of date (updating, or why it couldn't). The latency in the status tooltip and Vitals is the agent's WebSocket round-trip when it reports through the agent.
 
+## Approving custom scripts
+
+The panel runs a custom script (a machine's update script, a saved command) on a machine only when the script's sha256 is in `~/.config/fleet/approved-scripts` there. The panel never writes that file; the machine's owner does, by running the command the panel shows:
+
+- `fleet-agent approve <sha256>` (needs a terminal: it reads the answer from `/dev/tty`) asks the panel for the script with `GET /agent/script/<sha256>` and its machine token, checks the script has that sha256, prints it with control and formatting characters made visible (escape sequences, carriage returns, right-to-left overrides can't hide a line), and appends `<sha256> <name>` to the file (0600, directory 0700) if the answer is yes. Without a token or a reachable panel it says how to add the line by hand.
+- `fleet-agent approved` lists the approvals; `fleet-agent unapprove <hash>` removes one (8+ characters of the hash).
+- The file is outside `~/.config/fleet-agent/`, so it survives reinstalling or removing the agent, and machines without an agent use the same file.
+- The probe reports `approvals=1` and an `approved=<sha256>` line per approval, so the panel can show what still needs approving. An agent from before this reports neither, and the panel shows "unknown" until it updates itself.
+- The check that enforces it is part of the command the panel sends over ssh, built on the server around the exact script it runs; a script that isn't approved stops with exit code 126 before anything runs.
+
 ## Security
 
-- The agent trusts only the panel's own CA and sends a per-machine token. A stolen token lets someone post fake metrics for that one machine and download the agent binary, nothing more. **New token** or **Remove agent** revokes it.
-- The agent accepts no commands: `collect` only picks one of four built-in read-only scripts. A compromised panel gains nothing it doesn't already have through ssh, except one thing: it can push a new agent binary, which runs as the user. That is the same reach it has through ssh as that user.
+- The agent trusts only the panel's own CA and sends a per-machine token. A stolen token lets someone post fake metrics for that one machine, download the agent binary, and read a custom script whose sha256 they already know, nothing more. It can't approve anything: approvals are a file on the machine. **New token** or **Remove agent** revokes it.
+- The agent accepts no commands: `collect` only picks one of four built-in read-only scripts. `approve` is run by a person on the machine; the panel can't trigger it, and the hash check means it can't swap in a different script. A compromised panel gains nothing it doesn't already have through ssh, except one thing: it can push a new agent binary, which runs as the user. That is the same reach it has through ssh as that user.
 - The agent listens on nothing. Keep the panel off the internet as before; machines outside the LAN reach it over Tailscale or not at all (they fall back to ssh).
 - The one-time install command skips certificate checking for the script itself, so someone who can intercept LAN traffic in those 10 minutes could serve a different script. Use **Install agent** over ssh where possible.
 
 ## Checks
 
-- `cd agent && go test -race ./...`: against a fake panel over TLS: reports, reconnect, trying the next URL, backfill (order and window), `collect` and `config`, unknown collectors refused, rejected and revoked tokens, an untrusted certificate refused, self-update (wrong checksum and foreign host refused, binary replaced and re-exec'd), timeouts killing the process group, and every real collector on the machine running the tests, checked for the markers the panel's parsers need.
+- `cd agent && go test -race ./...`: against a fake panel over TLS: reports, reconnect, trying the next URL, backfill (order and window), `collect` and `config`, unknown collectors refused, rejected and revoked tokens, an untrusted certificate refused, self-update (wrong checksum and foreign host refused, binary replaced and re-exec'd), timeouts killing the process group, and every real collector on the machine running the tests, checked for the markers the panel's parsers need. Approving: yes and no answers, already approved, a script whose hash doesn't match refused (and not shown), bad hashes refused before asking the panel, unknown scripts and wrong tokens, hidden characters made visible, unapprove, and the probe reporting approvals.
 - `cd panel && npm run typecheck && npm run lint`.
 - End to end, run against a dev panel with its own state directory: one-time install, reports via the agent (charts at 3 s while watched, 30 s otherwise), details, updates and index through the agent with a dead ssh host, fallback to ssh within a few seconds of the agent stopping, reconnect after a panel restart, backfill after freezing the panel for 110 s, self-update to a new build (same PID), token revocation, and the install, new-token and remove terminal scripts against a fake ssh.
 
