@@ -50,11 +50,21 @@ function requireTool(bin: string, label: string): string {
   return `command -v ${bin} >/dev/null 2>&1 || { printf '\\033[38;2;247;118;142m%s\\033[0m\\n' ${shq(msg)}; exit 127; }`;
 }
 
+/** Sets OMARCHY_PATH and PATH the way Omarchy's own shells do. */
+const OMARCHY_ENV = "/usr/share/omarchy/default/bash/env-bootstrap";
+
 /** The system update for an OS family; `y` answers its prompts. */
 function systemUpdate(os: UpdateOs, y: boolean): string {
   switch (os) {
     case "omarchy":
-      return [requireTool("omarchy-update", "Omarchy"), `omarchy-update${y ? " -y" : ""}`].join("\n");
+      return [
+        requireTool("omarchy-update", "Omarchy"),
+        // Over ssh nothing sets OMARCHY_PATH (pam_env only gives PATH), and the update's privileged
+        // steps refuse to run without it ("OMARCHY_PATH does not match this Omarchy command").
+        // Omarchy's own env bootstrap sets it, dev-linked checkouts included.
+        `[ -r ${OMARCHY_ENV} ] && . ${OMARCHY_ENV}`,
+        `omarchy-update${y ? " -y" : ""}`,
+      ].join("\n");
     case "arch":
       return [
         requireTool("pacman", "Arch Linux"),

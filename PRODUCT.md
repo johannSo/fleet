@@ -31,20 +31,23 @@ It is built on plain ssh, plus an optional report-only agent (`fleet-agent`) tha
 
 ## Operating Context
 
-- Runs as a systemd user service on an always-on machine on the home network (`http://<host>:4747`, HTTPS on `:4443` for phones). Home LAN only; remote access via Tailscale or an ssh tunnel, never port-forwarding.
-- Machines are typically a mix of Linux desktops, laptops, a Raspberry Pi and servers; updates use the right tool per machine (`omarchy-update`, `yay`/`paru`/`pacman`, `apt`, `dnf`).
+- Runs in Docker, and only in Docker: one image (`ghcr.io/johannso/fleet`, amd64 and arm64) started with `docker compose` on an always-on machine on the home network, with host networking. Panel on `http://<host>:4747`, HTTPS on `:4443` for phones and agents, AI proxy on `:8317`. The compose stack bundles ClickHouse for the proxy's request log. Upgrading is `docker compose pull && docker compose up -d`.
+- Home LAN only; remote access via Tailscale or an ssh tunnel, never port-forwarding.
+- One account: username, password and optional two-factor (TOTP). It is created on first start, from the panel's own machine or with the setup code printed in the container log.
+- Machines are typically a mix of Linux desktops, laptops, a Raspberry Pi and servers; updates use the right tool per machine (`omarchy-update`, `yay`/`paru`/`pacman`, `apt`, `dnf`, `zypper`, `apk`).
 - Phones pair by scanning a one-time QR code; sessions last 180 days and can be revoked.
 - Machines are frequently offline (laptops asleep, desktops off): unreachable is a normal state, not an error, handled with Retry, Wake-on-LAN and a copyable ssh command.
 
 ## Capabilities and Constraints
 
-- Screens: Overview (live CPU, memory, disk, temperature, network, uptime, pending updates, reboot-required, failed units), Machines, per-machine node view (with indexed hardware and notes), Add/Edit machine, Claude skill, Activity, AI proxy (Overview, Accounts, API keys, Models, Usage, Logs, Settings), login/pairing, Add a device.
-- AI proxy: CLIProxyAPI (git submodule, unmodified) runs as `fleet-proxy.service` next to the panel; the panel is its only UI and keeps its usage history.
+- Screens: Overview (live CPU, memory, disk, temperature, network, uptime, pending updates, reboot-required, failed units), Machines, per-machine node view (with indexed hardware and notes), Add/Edit machine, Claude skill, Activity, AI proxy (Overview, Accounts, API keys, Models, Usage, Traffic, Logs, Settings), Account (password, two-factor), login/pairing, Add a device.
+- AI proxy: CLIProxyAPI (git submodule, unmodified) runs inside the Fleet container, started and supervised by the panel; the panel is its only UI and keeps its usage history. Traffic keeps every request through the proxy in full in ClickHouse (prompt, answer, each upstream attempt), searchable and live.
+- Release check: the panel checks GitHub releases every few hours and shows when a newer version is out, with the upgrade command. `FLEET_UPDATE_CHECK=0` turns it off.
 - Terminal dock with persistent PTY sessions (reattach with scrollback); full-screen on phones with an extra-keys row.
 - Command palette (Ctrl+K) for navigation and every action; Ctrl+` toggles the terminal.
 - Actions come from a fixed, validated set built on the server: update, reboot, shutdown, unit, container, logs, kill, built-in commands and saved commands (including on several machines at once). The panel never offers a shell or runs a command line typed into it.
 - Custom scripts (update scripts, saved commands) run on a machine only after someone approves their exact sha256 on that machine (`fleet-agent approve`, or a line in `~/.config/fleet/approved-scripts`). A signed-in session alone can't get new code run anywhere. Destructive actions must stay visible and deliberate.
-- Stack is fixed by the codebase: Next.js 16 with a custom server (`panel/server.ts`), React 19, Tailwind 4, xterm.js, node-pty, cmdk, motion, sonner, lucide icons.
+- Stack is fixed by the codebase: Next.js 16 with a custom server (`panel/server.ts`), React 19, Tailwind 4, xterm.js, node-pty, cmdk, motion, sonner, lucide icons; SQLite for the panel's own state, ClickHouse for the proxy's request log; `fleet-agent` in Go.
 - Machine names and addresses come from the inventory, never from the product itself.
 
 ## Brand Commitments
@@ -57,6 +60,7 @@ It is built on plain ssh, plus an optional report-only agent (`fleet-agent`) tha
 
 - The inventory (`fleet.db` in the panel's state directory): machines with services, addresses, notes and indexed hardware.
 - `panel/README.md`: full feature, security and settings documentation.
+- `README.md` with real screenshots of the panel, light and dark, laptop and phone: `docs/readme/`.
 - App icons: `panel/app/icon.svg`, `panel/public/icons/`, sources in `panel/scripts/icons/`.
 - Screenshot tooling for design review: `npm run screenshot` and `npm run screenshot:mobile`.
 - No testimonials, no metrics on usage. Do not invent any.
