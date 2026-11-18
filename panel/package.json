@@ -1,6 +1,6 @@
 {
   "name": "panel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "scripts": {
     "dev": "PORT=${PORT:-4848} TLS_PORT=${TLS_PORT:-0} tsx server.ts",
