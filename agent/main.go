@@ -20,7 +20,7 @@ import (
 
 // Set at build time by build.sh.
 var (
-	version = "0.2.1"
+	version = "0.3.0-beta.1"
 	build   = "dev"
 )
 
