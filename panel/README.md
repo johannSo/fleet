@@ -148,8 +148,11 @@ The first start with an empty database imports `../fleet.toml` (or `FLEET_FILE`)
 | `PATCH /api/machines/:id` | change some fields; `services` and `addresses` replace the list; re-indexes when the connection changed |
 | `DELETE /api/machines/:id` | remove it (activity and usage history stay) |
 | `POST /api/machines/:id/index` | index now |
+| `PUT /api/networks/name` | name a subnet on the Network page `{cidr, name}` (`""` removes the name; signed-in sessions only) |
 
 Every change is in the Activity log under Panel.
+
+**Network** (`/network`, `lib/network.ts`) groups the machines by the subnets the index found on their interfaces, with each address's prefix and the default gateway (its MAC from the neighbour table). Subnets whose gateways share a MAC sit behind one Gateway on the map; machines with their own public address hang off the Internet; Tailscale and WireGuard are overlay strips. A Map and a List view show the same thing (phones get the list). The only thing typed in is an optional name per subnet, stored in the settings table. Machines indexed before this was kept are re-indexed on their next probe.
 
 ## Agents
 

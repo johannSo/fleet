@@ -25,6 +25,8 @@ interface FleetCtx {
   /** Each machine's fleet-agent: connected, version, out of date. */
   agents: Record<string, AgentStatus>;
   updates: Record<string, UpdateInfo | undefined>;
+  /** Names given to subnets on the Network page, by CIDR. */
+  networkNames: Record<string, string>;
   updatesLoading: Record<string, boolean>;
   loaded: boolean;
   lastFetch: number | null;
@@ -51,6 +53,7 @@ export function FleetProvider({ children }: { children: React.ReactNode }) {
   const [states, setStates] = useState<Record<string, NodeState>>({});
   const [history, setHistory] = useState<Record<string, Sample[]>>({});
   const [agents, setAgents] = useState<Record<string, AgentStatus>>({});
+  const [networkNames, setNetworkNames] = useState<Record<string, string>>({});
   const [updates, setUpdates] = useState<Record<string, UpdateInfo | undefined>>({});
   const [updatesLoading, setUpdatesLoading] = useState<Record<string, boolean>>({});
   const [lastFetch, setLastFetch] = useState<number | null>(null);
@@ -134,6 +137,7 @@ export function FleetProvider({ children }: { children: React.ReactNode }) {
         states: NodeState[];
         history: Record<string, Sample[]>;
         agents?: Record<string, AgentStatus>;
+        networkNames?: Record<string, string>;
         at: number;
         startedAt: number;
       } = await res.json();
@@ -144,6 +148,7 @@ export function FleetProvider({ children }: { children: React.ReactNode }) {
       // The server keeps the sample history, so charts survive reloads.
       setHistory(data.history);
       setAgents(data.agents ?? {});
+      setNetworkNames(data.networkNames ?? {});
       setLastFetch(Date.now());
       setFetchError(null);
     } catch (err) {
@@ -239,6 +244,7 @@ export function FleetProvider({ children }: { children: React.ReactNode }) {
       history,
       agents,
       updates,
+      networkNames,
       updatesLoading,
       loaded: lastFetch !== null,
       lastFetch,
@@ -251,7 +257,7 @@ export function FleetProvider({ children }: { children: React.ReactNode }) {
       displayStatus,
       accent,
     }),
-    [nodes, states, history, agents, updates, updatesLoading, lastFetch, fetchError, poll, probe, startedAt, refreshUpdates, markPower, displayStatus, accent],
+    [nodes, states, history, agents, updates, networkNames, updatesLoading, lastFetch, fetchError, poll, probe, startedAt, refreshUpdates, markPower, displayStatus, accent],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

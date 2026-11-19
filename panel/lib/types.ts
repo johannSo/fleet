@@ -60,6 +60,8 @@ export interface HwNic {
   type: "ethernet" | "wifi" | "tailscale" | "vpn" | "other";
   mac: string | null;
   ipv4: string[];
+  /** The same IPv4 addresses with their prefix ("192.168.1.20/24"). Absent on machines indexed before it was kept. */
+  cidrs?: string[];
   ipv6: string[];
   up: boolean;
   /** Link speed in Mbit/s. */
@@ -93,6 +95,8 @@ export interface Hardware {
   gpus: string[];
   disks: HwDisk[];
   nics: HwNic[];
+  /** The default route's next hop, with its MAC when the neighbour table has it. Absent on machines indexed before it was kept. */
+  gateway?: { iface: string; ip: string; mac: string | null } | null;
   /** Battery health: current full capacity as a percentage of the design capacity. */
   battery: { health: number | null } | null;
   docker: "ok" | "sudo" | "denied" | "none";

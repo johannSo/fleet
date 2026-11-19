@@ -27,10 +27,13 @@ for b in /sys/block/mmcblk*; do [ -r "$b/device/type" ] && echo "mmc=$(basename 
 for n in /sys/class/net/*; do
   i=$(basename "$n")
   [ "$i" = lo ] && continue
-  echo "nic=$i|$(cat "$n/address" 2>/dev/null)|$(cat "$n/operstate" 2>/dev/null)|$(cat "$n/speed" 2>/dev/null)|$([ -e "$n/device" ] && echo 1 || echo 0)|$([ -d "$n/wireless" ] || [ -e "$n/phy80211" ] && echo 1 || echo 0)|$(cat "$n/type" 2>/dev/null)"
+  echo "nic=$i|$(cat "$n/address" 2>/dev/null)|$(cat "$n/operstate" 2>/dev/null)|$(cat "$n/speed" 2>/dev/null)|$([ -e "$n/device" ] && echo 1 || echo 0)|$([ -d "$n/wireless" ] || [ -e "$n/phy80211" ] && echo 1 || echo 0)|$(cat "$n/type" 2>/dev/null)|$(sed -n 's/^DEVTYPE=//p' "$n/uevent" 2>/dev/null)"
 done
 ip -o addr show scope global 2>/dev/null | awk '{ f=""; for (i=5;i<=NF;i++) if ($i=="temporary"||$i=="deprecated") f="tmp"; print "ip=" $2 "|" $3 "|" $4 "|" f }'
 ip route show default 2>/dev/null | awk '{ for (i=1;i<NF;i++) if ($i=="dev") print "route=" $(i+1) }'
+ip route show default 2>/dev/null | awk '{ v=""; d=""; for (i=1;i<NF;i++) { if ($i=="via") v=$(i+1); if ($i=="dev") d=$(i+1) } if (v && d) print d, v }' | while read -r d v; do
+  echo "gw=$d|$v|$(ip neigh show "$v" dev "$d" 2>/dev/null | awk '{ for (i=1;i<NF;i++) if ($i=="lladdr") { print $(i+1); exit } }')"
+done
 for b in /sys/class/power_supply/BAT*; do
   [ -d "$b" ] || continue
   full=$(cat "$b/energy_full" 2>/dev/null || cat "$b/charge_full" 2>/dev/null)

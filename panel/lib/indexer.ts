@@ -165,6 +165,7 @@ export function parseIndex(out: string): Hardware {
   const nicRows: string[] = [];
   const ipRows: string[] = [];
   const routes: string[] = [];
+  const gateways: string[] = [];
   const batteries: string[] = [];
   const containers: Hardware["containers"] = [];
   const ports: Hardware["ports"] = [];
@@ -199,6 +200,9 @@ export function parseIndex(out: string): Hardware {
         break;
       case "route":
         routes.push(v);
+        break;
+      case "gw":
+        gateways.push(v);
         break;
       case "battery":
         batteries.push(v);
@@ -285,30 +289,36 @@ export function parseIndex(out: string): Hardware {
   /* network */
   const nics: HwNic[] = [];
   for (const row of nicRows) {
-    const [name, mac, state, speed, physical, wireless, arp] = row.split("|");
-    if (/^(docker|br-|veth|virbr|vnet|cni|flannel|kube|vxlan|dummy|ifb|lxc|podman)/.test(name)) continue;
+    const [name, mac, state, speed, physical, wireless, arp, devtype] = row.split("|");
+    if (/^(docker|br-|veth|virbr|vnet|cni|flannel|kube|vxlan|dummy|ifb|lxc|podman|incusbr|lxdbr|vboxnet|vmnet|fwbr|fwpr|fwln)/.test(name)) continue;
     let type: HwNic["type"];
     if (name.startsWith("tailscale")) type = "tailscale";
     else if (/^(wg|tun|tap|ppp|zt)/.test(name) || /mullvad|proton|nordlynx/.test(name)) type = "vpn";
     else if (wireless === "1") type = "wifi";
-    else if (physical === "1" && arp === "1") type = "ethernet";
-    else continue;
+    else if (arp === "1" && (physical === "1" || /^(bridge|bond|vlan)$/.test(devtype ?? "") || routes.includes(name))) {
+      // A real port, a bridge, bond or VLAN on top of one (Proxmox's vmbr0), or a container's veth that carries its default route.
+      type = "ethernet";
+    } else continue;
     // Commercial VPN tunnels aren't ways to reach the machine.
     if (type === "vpn" && /mullvad|proton|nordlynx|ivpn/.test(name)) continue;
     const ipv4: string[] = [];
+    const cidrs: string[] = [];
     const ipv6: string[] = [];
     for (const ip of ipRows) {
       const [iface, fam, cidr, flag] = ip.split("|");
       if (iface !== name || flag === "tmp") continue;
       const a = cidr.split("/")[0];
-      if (fam === "inet") ipv4.push(a);
-      else if (/^[23]/.test(a)) ipv6.push(a);
+      if (fam === "inet") {
+        ipv4.push(a);
+        cidrs.push(cidr.includes("/") ? cidr : `${a}/32`);
+      } else if (/^[23]/.test(a)) ipv6.push(a);
     }
     nics.push({
       name,
       type,
       mac: mac && mac !== "00:00:00:00:00:00" ? mac.toLowerCase() : null,
       ipv4,
+      cidrs,
       ipv6,
       up: state === "up" || (state === "unknown" && ipv4.length > 0),
       speed: Number(speed) > 0 ? Number(speed) : null,
@@ -317,6 +327,9 @@ export function parseIndex(out: string): Hardware {
   }
   const primary = routes.map((r) => nics.find((n) => n.name === r)).find((n) => n && (n.type === "ethernet" || n.type === "wifi")) ?? nics.find((n) => n.name === routes[0]);
   if (primary) primary.primary = true;
+
+  const [gwIface, gwIp, gwMac] = (gateways[0] ?? "").split("|");
+  const gateway = gwIface && gwIp ? { iface: gwIface, ip: gwIp, mac: gwMac ? gwMac.toLowerCase() : null } : null;
 
   /* battery */
   let battery: Hardware["battery"] = null;
@@ -344,6 +357,7 @@ export function parseIndex(out: string): Hardware {
     gpus,
     disks: hwDisks,
     nics,
+    gateway,
     battery,
     docker: (["ok", "sudo", "denied", "none"].includes(kv.docker) ? kv.docker : "none") as Hardware["docker"],
     containers,
@@ -413,6 +427,8 @@ export function maybeIndex(node: FleetNode, m: NodeMetrics) {
     !hw ||
     !node.indexedAt ||
     Date.now() - node.indexedAt > INDEX_TTL ||
+    // Indexed before the panel kept the gateway and address prefixes (the Network page needs both).
+    hw.gateway === undefined ||
     (m.kernel && hw.kernel !== m.kernel) ||
     (m.hostname && hw.hostname !== m.hostname);
   if (stale) void indexMachine(node);

@@ -475,7 +475,7 @@ function useTicker(active: boolean) {
   }, [active]);
 }
 
-function NodeMenu({ node, online }: { node: FleetNode; online: boolean }) {
+export function NodeMenu({ node, online }: { node: FleetNode; online: boolean }) {
   const actions = useActions();
   const router = useRouter();
   const { copy } = useCopy();
@@ -683,6 +683,14 @@ export function NodeCard({ node, index }: { node: FleetNode; index: number }) {
 
 /* ---------------- offline row ---------------- */
 
+/** Sends a Wake-on-LAN packet and says how it went. */
+export async function wakeMachine(id: string) {
+  const res = await fetch(`/api/nodes/${id}/wake`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) toast.success(`Wake-on-LAN sent to ${id}`, { description: "It usually takes 20–60 s to boot." });
+  else toast.error("Couldn't send wake packet", { description: body.error });
+}
+
 function OfflineRow({ node }: { node: FleetNode }) {
   const fleet = useFleet();
   const { copy, copied } = useCopy();
@@ -703,10 +711,7 @@ function OfflineRow({ node }: { node: FleetNode }) {
   const wake = async () => {
     setBusy("wake");
     try {
-      const res = await fetch(`/api/nodes/${node.id}/wake`, { method: "POST" });
-      const body = await res.json();
-      if (res.ok) toast.success(`Wake-on-LAN sent to ${node.id}`, { description: "It usually takes 20–60 s to boot." });
-      else toast.error("Couldn't send wake packet", { description: body.error });
+      await wakeMachine(node.id);
     } finally {
       setBusy(null);
     }

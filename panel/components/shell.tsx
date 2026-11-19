@@ -21,6 +21,7 @@ import {
   Smartphone,
   SquareTerminal,
   UserRound,
+  Waypoints,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -229,6 +230,9 @@ function Sidebar() {
         <NavLink href="/" icon={LayoutGrid}>
           Overview
         </NavLink>
+        <NavLink href="/network" icon={Waypoints}>
+          Network
+        </NavLink>
         <NavLink href="/proxy" icon={Network}>
           AI proxy
         </NavLink>
@@ -360,6 +364,7 @@ function Topbar() {
   else if (path === "/activity") crumbs.push({ label: "Activity" });
   else if (path === "/skill") crumbs.push({ label: "Claude skill" });
   else if (path === "/machines") crumbs.push({ label: "Machines" });
+  else if (path === "/network") crumbs.push({ label: "Network" });
   else if (path.startsWith("/proxy")) {
     const tab = path.split("/")[2];
     crumbs.push(tab ? { label: "AI proxy", href: "/proxy" } : { label: "AI proxy" });
@@ -434,7 +439,7 @@ function MobileTopbar() {
   const nodeId = path.startsWith("/nodes/") ? decodeURIComponent(path.split("/")[2] ?? "") : null;
   const title =
     nodeId ??
-    (path === "/activity" ? "Activity" : path === "/machines" ? "Machines" : path === "/skill" ? "Claude skill" : path.startsWith("/proxy") ? "AI proxy" : "Fleet");
+    (path === "/activity" ? "Activity" : path === "/machines" ? "Machines" : path === "/network" ? "Network" : path === "/skill" ? "Claude skill" : path.startsWith("/proxy") ? "AI proxy" : "Fleet");
 
   return (
     <header className="flex shrink-0 items-end border-b border-line bg-bg/85 pt-[env(safe-area-inset-top)] backdrop-blur-md md:hidden">
@@ -621,6 +626,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
           <SheetItem icon={ArrowUpCircle} label={`Fleet v${version.info.latest.version} available`} hint={`This panel runs v${version.info.current}`} onClick={go(version.open)} tone="green" />
         )}
         <SheetItem icon={Search} label="Search & actions" hint="Jump to a machine or run any action" onClick={go(() => palette.setOpen(true))} />
+        <SheetItem icon={Waypoints} label="Network" hint="Your machines by subnet" onClick={go(() => router.push("/network"))} />
         <SheetItem icon={Activity} label="Activity" hint="Running and finished terminal sessions" onClick={go(() => router.push("/activity"))} />
         <SheetItem icon={Network} label="AI proxy" hint="Subscriptions, API keys, usage" onClick={go(() => router.push("/proxy"))} />
         <SheetItem icon={Plus} label="Add machine" hint="Indexed automatically over ssh" onClick={go(actions.addMachine)} />

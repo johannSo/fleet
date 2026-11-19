@@ -11,6 +11,7 @@
  *   POST   /api/machines/:id/index     re-index now
  *   GET    /api/panel/ssh-key          the key machines must authorize
  *   POST   /api/panel/ssh-key          create one if there is none
+ *   PUT    /api/networks/name          name a subnet on the Network page ({cidr, name}; "" removes it)
  *   GET    /api/skill                  generated SKILL.md + its settings
  *   PUT    /api/skill                  change settings
  *   POST   /api/skill/token            new access token (old copies stop working)
@@ -25,7 +26,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { logActivity } from "./audit";
-import { createMachine, deleteMachine, getNode, getSetting, InventoryError, loadFleet, setSetting, updateMachine } from "./fleet";
+import { createMachine, deleteMachine, getNode, getSetting, InventoryError, loadFleet, setNetworkName, setSetting, updateMachine } from "./fleet";
 import { indexMachine } from "./indexer";
 import { hostName, lanAddresses } from "./net";
 import { inventoryMarkdown, skillMarkdown, zip } from "./skill";
@@ -226,7 +227,7 @@ async function indexed(node: FleetNode, ctx: ApiCtx, why: string): Promise<Fleet
 
 export async function handleInventory(req: IncomingMessage, res: ServerResponse, url: URL, ctx: ApiCtx): Promise<boolean> {
   const { pathname } = url;
-  if (!/^\/api\/(inventory|machines|panel\/ssh-key|skill)/.test(pathname)) return false;
+  if (!/^\/api\/(inventory|machines|networks|panel\/ssh-key|skill)/.test(pathname)) return false;
   const method = req.method ?? "GET";
   try {
     if (pathname === "/api/inventory" && method === "GET") {
@@ -274,6 +275,16 @@ export async function handleInventory(req: IncomingMessage, res: ServerResponse,
         return json(res, 200, { ok: true }), true;
       }
       return json(res, 405, { error: "Method not allowed" }), true;
+    }
+
+    if (pathname === "/api/networks/name" && method === "PUT") {
+      // Session only: the skill's token never matches this path (TOKEN_PATHS).
+      const b = await readJson(req, 4_000);
+      const cidr = String(b.cidr ?? "");
+      const name = String(b.name ?? "");
+      setNetworkName(cidr, name);
+      logActivity({ source: "panel", kind: "panel.network", actor: ctx.actor, summary: name.trim() ? `Named ${cidr} “${name.trim()}”` : `Removed the name of ${cidr}`, status: "ok" });
+      return json(res, 200, { ok: true }), true;
     }
 
     if (pathname === "/api/panel/ssh-key") {

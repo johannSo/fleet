@@ -27,6 +27,7 @@ import {
   UserRound,
   Users,
   Waves,
+  Waypoints,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
@@ -234,6 +235,9 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
                   <Command.Group heading="Go to">
                     <Item value="overview dashboard home" icon={LayoutGrid} onSelect={() => run(() => router.push("/"))}>
                       Overview
+                    </Item>
+                    <Item value="network subnets addresses gateway lan vlan map" icon={Waypoints} onSelect={() => run(() => router.push("/network"))}>
+                      Network
                     </Item>
                     <Item value="activity sessions history" icon={Activity} onSelect={() => run(() => router.push("/activity"))}>
                       Activity

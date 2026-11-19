@@ -40,7 +40,7 @@ It is built on plain ssh, plus an optional report-only agent (`fleet-agent`) tha
 
 ## Capabilities and Constraints
 
-- Screens: Overview (live CPU, memory, disk, temperature, network, uptime, pending updates, reboot-required, failed units), Machines, per-machine node view (with indexed hardware and notes), Add/Edit machine, Claude skill, Activity, AI proxy (Overview, Accounts, API keys, Models, Usage, Traffic, Logs, Settings), Account (password, two-factor), login/pairing, Add a device.
+- Screens: Overview (live CPU, memory, disk, temperature, network, uptime, pending updates, reboot-required, failed units), Machines, per-machine node view (with indexed hardware and notes), Network (machines by subnet, as a map or a list), Add/Edit machine, Claude skill, Activity, AI proxy (Overview, Accounts, API keys, Models, Usage, Traffic, Logs, Settings), Account (password, two-factor), login/pairing, Add a device.
 - AI proxy: CLIProxyAPI (git submodule, unmodified) runs inside the Fleet container, started and supervised by the panel; the panel is its only UI and keeps its usage history. Traffic keeps every request through the proxy in full in ClickHouse (prompt, answer, each upstream attempt), searchable and live.
 - Release check: the panel checks GitHub releases every few hours and shows when a newer version is out, with the upgrade command. `FLEET_UPDATE_CHECK=0` turns it off.
 - Terminal dock with persistent PTY sessions (reattach with scrollback); full-screen on phones with an extra-keys row.

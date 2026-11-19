@@ -35,16 +35,19 @@ function packageVersion(): string {
 const current = (process.env.FLEET_VERSION || packageVersion()).replace(/^v/, "");
 const commit = process.env.FLEET_COMMIT || null;
 
-/** x.y.z → [x, y, z]; anything after the numbers (a pre-release) is ignored. */
+/** x.y.z → [x, y, z]; a pre-release suffix only matters in newer(). */
 function parts(v: string): number[] {
   const m = v.replace(/^v/, "").match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
   return m ? [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)] : [0, 0, 0];
 }
 
+const isPre = (v: string) => /^\d+(\.\d+){0,2}-/.test(v.replace(/^v/, ""));
+
 export function newer(a: string, b: string): boolean {
   const [x, y] = [parts(a), parts(b)];
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
-  return false;
+  // Same numbers: a release is newer than its own pre-release (0.3.0 over 0.3.0-beta.1).
+  return !isPre(a) && isPre(b);
 }
 
 const g = globalThis as unknown as { __fleetRelease?: { latest: VersionInfo["latest"]; at: number | null; tried: number; error: string | null; inflight: Promise<void> | null } };

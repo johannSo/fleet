@@ -163,6 +163,32 @@ export function setSetting(key: string, value: string | null) {
   else db().prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 }
 
+/* ---------------- network names ---------------- */
+
+const CIDR_RE = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+
+/** Names given to subnets on the Network page, by CIDR ("192.168.1.0/24" → "Home"). */
+export function networkNames(): Record<string, string> {
+  try {
+    const v = JSON.parse(getSetting("network.names") ?? "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Names a subnet; an empty name removes it. */
+export function setNetworkName(cidr: string, name: string) {
+  if (!CIDR_RE.test(cidr)) throw new InventoryError("Expected a network like 192.168.1.0/24");
+  const clean = name.replace(/\s+/g, " ").trim();
+  if (clean.length > 40) throw new InventoryError("Keep the name under 40 characters");
+  const names = networkNames();
+  if (clean) names[cidr] = clean;
+  else delete names[cidr];
+  setSetting("network.names", Object.keys(names).length ? JSON.stringify(names) : null);
+  changed();
+}
+
 /* ---------------- one-time import of the old fleet.toml ---------------- */
 
 const SPEC_LABELS: Record<string, string> = { cpu: "CPU", gpu: "GPU", ram: "RAM", npu: "NPU", psu: "PSU", os: "OS" };

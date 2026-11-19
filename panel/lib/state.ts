@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { agentConn, agentStatus, collect, freshProbe, IDLE_PROBE_MS, runCollector, setProbeInterval, WATCHED_PROBE_MS, type AgentReport } from "./agents";
 import { agentRelease, COLLECTOR_TIMEOUT, collectorScript } from "./collectors";
-import { loadFleet } from "./fleet";
+import { loadFleet, networkNames } from "./fleet";
 import { maybeIndex } from "./indexer";
 import { parseProbe, type RawSample } from "./probe";
 import { runScript, sshError, type ExecResult } from "./ssh";
@@ -189,7 +189,7 @@ export async function getFleetState() {
   const history = Object.fromEntries(nodes.map((n) => [n.id, store.history.get(n.id) ?? []]));
   const release = agentRelease();
   const agents: Record<string, AgentStatus> = Object.fromEntries(nodes.map((n) => [n.id, agentStatus(n, release)]));
-  return { nodes, states, history, agents, at: Date.now(), startedAt: PANEL_STARTED };
+  return { nodes, states, history, agents, networkNames: networkNames(), at: Date.now(), startedAt: PANEL_STARTED };
 }
 
 /* ---------------- pending updates ---------------- */
